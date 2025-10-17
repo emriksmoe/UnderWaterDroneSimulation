@@ -205,3 +205,48 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Virtual Environment (simulation specific)
+underwater-dtn-env/
+.venv/
+
+# Simulation Results and Data
+results/
+*.csv
+*.json
+*.pkl
+*.h5
+
+# Configuration Files (local overrides)
+config/local_*.yaml
+config/personal_*.yaml
+
+# Simulation Logs
+*.log
+simulation_*.txt
+
+# Experimental/Temporary Files
+experiments/quick_tests/temp_*.py
+experiments/quick_tests/scratch_*.py
+experiments/quick_tests/debug_*.py
+
+# Plot and Figure Outputs
+*.png
+*.jpg
+*.pdf
+*.svg
+figures/
+plots/
+
+# Data Analysis Notebooks (if you add them later)
+*.ipynb_checkpoints/
+analysis_*.ipynb
+
+# OS Specific (add if missing)
+.DS_Store
+Thumbs.db
+
+# IDE Specific
+.vscode/settings.json
+.vscode/launch.json
+.idea/workspace.xml
