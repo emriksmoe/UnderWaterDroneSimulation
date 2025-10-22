@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Set, Optional
+from ..config.simulation_config import SimulationConfig
 import time
 
 @dataclass 
@@ -12,10 +13,10 @@ class DTNMessage:
     destination_id: str
     data: str
     generation_time: float
-    hop_count: int = 0
-    ttl: float = 3600  # Time-to-live in seconds (this is 1 hour)
-    priority: int = 1  # Default priority
-    size: int = 100  # Size in bytes
+    hop_count: int
+    ttl: float  # Time-to-live in seconds (this is 1 hour)
+    priority: int  # Default priority
+    size: int # Size in bytes
 
     def is_expired(self, current_time: float) -> bool:
         return (current_time - self.generation_time) > self.ttl
