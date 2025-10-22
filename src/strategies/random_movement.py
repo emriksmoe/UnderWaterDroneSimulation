@@ -21,7 +21,7 @@ class RandomMovementStrategy(MovementStrategy):
             if ships:   
                 closest_ship = self.find_closest_ship(drone, ships)
                 return closest_ship.position
-        
+
         if drone.last_visited == "ship" and buffer_usage < config.random_strat_buffer_threshold:
             if sensors:
                 sensor = random.choice(sensors)

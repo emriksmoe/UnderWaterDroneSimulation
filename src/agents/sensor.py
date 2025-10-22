@@ -1,7 +1,7 @@
 #This is where the sensor agent is defined
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 from ..protocols.dtn_protocol import DTNMessage
 from ..utils.position import Position
 from ..config.simulation_config import SimulationConfig
@@ -40,7 +40,19 @@ class Sensor:
         messages_to_send = self.messages.copy()
         self.messages.clear()  # Clear buffer after collection
         return messages_to_send
+
+    def get_next_message_for_collection(self) -> Optional[DTNMessage]:
+        """Get the next message to be collected without removing it, and get oldest one if exists."""
+        if self.has_messages:
+            return self.messages.pop(0)
+        return None
     
+    def peek_next_message(self) -> Optional[DTNMessage]:
+        """Peek at the next message without removing it."""
+        if self.has_messages:
+            return self.messages[0]
+        return None
+
     def has_messages(self) -> bool:
         return len(self.messages) > 0
     
