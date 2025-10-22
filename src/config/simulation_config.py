@@ -1,4 +1,5 @@
 #This file has all simulation configuration parameters gathered in one place for easy access and modification.
+#Currently these parameters are just guesses
 
 from dataclasses import dataclass
 from typing import Tuple, List, Dict
@@ -23,7 +24,12 @@ class SimulationConfig:
     sensor_buffer_capacity: int = 100  # Maximum number of messages a sensor can store
 
     #Drone parameters
+    drone_speed: float = 2.0  # Speed of drones in m/s
+    drone_buffer_capacity: int = 1000  # Maximum number of messages a drone can store
 
+    #Drone random strategy parameters
+    visit_ship_probability: float = 0.2  # Probability of visiting a ship when deciding next target
+    random_strat_buffer_threshold: float = 0.9  # Threshold of buffer usage to trigger ship visit
     
     #Ship parameters
 
