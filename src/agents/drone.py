@@ -70,12 +70,12 @@ class Drone:
 
         if collected_count > 0:
             self.last_visited = "sensor"
-            
+
         print(f"Drone {self.id} collected {collected_count} messages from Sensor {sensor.id}")
         return collected_count
     
 
-    def exhange_messages_with_drone(self, other_drone: 'Drone', config: SimulationConfig, current_time: float) -> int:
+    def exchange_messages_with_drone(self, other_drone: 'Drone', config: SimulationConfig, current_time: float) -> int:
         """Exchange messages with another drone if in range."""
         if not self.can_communicate_with(other_drone.position, config):
             return 0
