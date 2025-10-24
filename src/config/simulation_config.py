@@ -13,6 +13,7 @@ class SimulationConfig:
     depth_range: float = 200.0  # Maximum depth in meters
     num_sensors: int = 20  # Number of static sensor nodes
     num_drones: int = 5  # Number of mobile drone nodes
+    num_ships: int = 2  # Number of surface ship nodes
 
     # Optical communication ranges
     sensor_comm_range: float = 20.0      # 20m (short range, high speed)
@@ -32,6 +33,7 @@ class SimulationConfig:
     random_strat_buffer_threshold: float = 0.9  # Threshold of buffer usage to trigger ship visit
     
     #Ship parameters
+    
 
 
     #DTN Protocol parameters

@@ -43,13 +43,13 @@ class Sensor:
 
     def get_next_message_for_collection(self) -> Optional[DTNMessage]:
         """Get the next message to be collected without removing it, and get oldest one if exists."""
-        if self.has_messages:
+        if self.has_messages():
             return self.messages.pop(0)
         return None
     
     def peek_next_message(self) -> Optional[DTNMessage]:
         """Peek at the next message without removing it."""
-        if self.has_messages:
+        if self.has_messages():
             return self.messages[0]
         return None
 
