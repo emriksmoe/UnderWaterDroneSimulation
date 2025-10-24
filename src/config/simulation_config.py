@@ -14,6 +14,8 @@ class SimulationConfig:
     num_sensors: int = 20  # Number of static sensor nodes
     num_drones: int = 5  # Number of mobile drone nodes
     num_ships: int = 2  # Number of surface ship nodes
+    message_ttl_check_interval: float = 30.0  # Interval in seconds to check for expired messages
+    statistics_interval: float = 300.0  # Interval in seconds to collect and print statistics
 
     # Optical communication ranges
     sensor_comm_range: float = 20.0      # 20m (short range, high speed)
@@ -27,6 +29,8 @@ class SimulationConfig:
     #Drone parameters
     drone_speed: float = 2.0  # Speed of drones in m/s
     drone_buffer_capacity: int = 1000  # Maximum number of messages a drone can store
+    communication_wait_time: float = 10.0  # Time in seconds a drone waits to communicate when in range
+    drone_wait_no_action_time: float = 3.0  # Time in seconds a drone waits when no action is possible
 
     #Drone random strategy parameters
     visit_ship_probability: float = 0.2  # Probability of visiting a ship when deciding next target

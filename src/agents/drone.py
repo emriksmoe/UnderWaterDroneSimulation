@@ -5,7 +5,7 @@ from typing import List, Optional
 from ..protocols.dtn_protocol import DTNMessage, DTNProtocol
 from ..utils.position import Position
 from ..config.simulation_config import SimulationConfig
-from ..strategies.movement_strategy import MovementStrategy
+from ..strategies.movement_strategy import MovementStrategy, TargetResult
 
 from .sensor import Sensor
 from .ship import Ship
@@ -25,7 +25,7 @@ class Drone:
         distance = self.position.distance_to(target)
         return distance / config.drone_speed  # Time = Distance / Speed
     
-    def get_next_target(self, sensors: List[Sensor], ships: List[Ship], other_drones: List['Drone'], config: SimulationConfig, current_time: float) -> Position:
+    def get_next_target(self, sensors: List[Sensor], ships: List[Ship], other_drones: List['Drone'], config: SimulationConfig, current_time: float) -> TargetResult:
         """Determine the next target position based on the movement strategy."""
         return self.movement_strategy.get_next_target(self, sensors, ships, other_drones, config, current_time)
 

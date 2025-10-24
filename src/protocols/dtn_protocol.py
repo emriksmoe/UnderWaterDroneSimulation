@@ -14,7 +14,7 @@ class DTNMessage:
     data: str
     generation_time: float
     hop_count: int
-    ttl: float  # Time-to-live in seconds (this is 1 hour)
+    ttl: float  # Time-to-live in seconds 
     priority: int  # Default priority
     size: int # Size in bytes
 
