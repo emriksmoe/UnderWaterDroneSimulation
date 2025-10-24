@@ -3,14 +3,13 @@
 #TODO: Make processes handle discrete time steps for drone encounters
 
 import simpy
-import random
 from typing import List
 
 from ..agents.drone import Drone
 from ..agents.ship import Ship
 from ..agents.sensor import Sensor
 from ..config.simulation_config import SimulationConfig
-from ..utils.position import Position
+
 
 # Handels sensor processes
 
@@ -88,7 +87,7 @@ def ship_process(env: simpy.Environment, ship: Ship, config: SimulationConfig):
 
 # Message TTL process
 
-def message_ttl_process(env: simpy.Environment, drones: List[Drone], sensors: List[Sensor], config: SimulationConfig):
+def message_ttl_process(env: simpy.Environment, sensors: List[Sensor], drones: List[Drone], config: SimulationConfig):
     """Process that periodically checks and removes expired messages based on TTL."""
     while True:
         yield env.timeout(config.message_ttl_check_interval)  # Check every 30 seconds
@@ -112,7 +111,7 @@ def message_ttl_process(env: simpy.Environment, drones: List[Drone], sensors: Li
 
 #Statistics process
 
-def statistics_process(env: simpy.Environment, drones: List[Drone], sensors: List[Sensor], ships: List[Ship], config: SimulationConfig):
+def statistics_process(env: simpy.Environment, sensors: List[Sensor], drones: List[Drone], ships: List[Ship], config: SimulationConfig):
     """Process that periodically collects and prints simulation statistics."""
     while True:
         yield env.timeout(config.statistics_interval)  # Collect stats every defined interval

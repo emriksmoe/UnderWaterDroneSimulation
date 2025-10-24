@@ -7,10 +7,18 @@ from typing import Tuple, List, Dict
 @dataclass
 class SimulationConfig:
 
+    #DTN and Strategy choice
+    dtn_protocol: str = "epidemic"  # Options: "Epidemic", "SprayAndWait", "PRoPHET"
+    drone_strategy: str = "random"   # Options: "Random", "BufferAware
+
     #General simulation parameters
     sim_time: int = 86400  # Total simulation time in seconds (this is 24 hours)
     area_size: Tuple[float, float] = (1000.0, 1000.0)  # Size of the simulation area (width, height) in meters
     depth_range: float = 200.0  # Maximum depth in meters
+    min_depth: float = 150.0  # Minimum depth in meters
+    min_distance_between_sensors: float = 150.0  # Minimum distance in meters between entities at initialization
+    min_distance_between_ships: float = 300.0  # Minimum distance in meters between ships at initialization
+    min_distance_between_drones: float = 50.0  # Minimum distance in meters between drones at initialization
     num_sensors: int = 20  # Number of static sensor nodes
     num_drones: int = 5  # Number of mobile drone nodes
     num_ships: int = 2  # Number of surface ship nodes
