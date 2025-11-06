@@ -57,6 +57,16 @@ class DTNSimulation:
         self.env.process(message_ttl_process(self.env, self.sensors, self.drones, self.config))
         self.env.process(statistics_process(self.env, self.sensors, self.drones, self.ships, self.config))
 
+    def get_results(self):
+        """Retrieve simulation results"""
+        return {
+            "sensors": self.sensors,
+            "drones": self.drones,
+            "ships": self.ships,
+            "simulation_time": self.config.sim_time,
+            "config": self.config
+        }
+
     def run(self):
         """Run the simulation"""
         print("Running simulation...")

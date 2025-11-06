@@ -26,7 +26,7 @@ class AgentFactory:
         if entity_type == "sensor":
             z = random.uniform(self.config.min_depth, self.config.depth_range) #Sensors placed at certain depth
         elif entity_type == "drone": 
-            z = random.uniform(0, self.config.depth_range)
+            z = random.uniform(10, self.config.min_depth)
         elif entity_type == "ship":
             z = 0.0  # Ships are on the surface
         else:
