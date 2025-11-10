@@ -26,6 +26,56 @@ class Position:
         """Return position as a tuple."""
         return (self.x, self.y, self.z)
     
+    def interpolate_to(self, other: 'Position', progress: float) -> 'Position':
+        """Interpolate between this position and another based on progress [0,1]."""
+        progress = max(0.0, min(1.0, progress))  # Clamp between 0 and 1
+
+        new_x = self.x + (other.x - self.x) * progress
+        new_y = self.y + (other.y - self.y) * progress
+        new_z = self.z + (other.z - self.z) * progress
+
+        return Position(new_x, new_y, new_z)
+    
+    def move_towards(self, target: 'Position', distance: float) -> 'Position':
+        """Move from current position towards target by specified distance"""
+        current_distance = self.distance_to(target)
+
+        if current_distance <= distance:
+            return Position(target.x, target.y, target.z)  # We can reach target
+        
+        dx = target.x - self.x
+        dy = target.y - self.y  
+        dz = target.z - self.z
+        
+    
+        # Normalize by current distance
+        dx /= current_distance
+        dy /= current_distance
+        dz /= current_distance
+        
+        # Move by specified distance
+        return Position(
+            self.x + dx * distance,
+            self.y + dy * distance,
+            self.z + dz * distance
+        )
+    
+
+    def get_direction_to(self, target: 'Position') -> Tuple[float, float, float]:
+        """Get normalized direction vector to target position"""
+        distance = self.distance_to(target)
+        if distance == 0:
+            return (0.0, 0.0, 0.0)
+        
+        return (
+            (target.x - self.x) / distance,
+            (target.y - self.y) / distance,
+            (target.z - self.z) / distance
+        )
+            
+
+
+    
     @classmethod
     def from_tuple(cls, pos: Tuple[float, float, float]) -> 'Position':
         """Create Position from tuple"""

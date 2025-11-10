@@ -29,47 +29,69 @@ def sensor_process(env: simpy.Environment, sensor: Sensor, config: SimulationCon
 def drone_process(env: simpy.Environment, drone: Drone, sensors: List[Sensor], ships: List[Ship], 
                   other_drones: List[Drone], config: SimulationConfig):
     """Simpy process that handles drone operations including movement and communication."""
-    #At this point only direct movement tis handled, so no encounters with other drones
 
     while True:
-
-        #Get next target position
+        # Get next target position
         target = drone.get_next_target(sensors, ships, other_drones, config, env.now)
-
-        print(f"Drone {drone.id} moving towards {target.position} at time {env.now}")
-
+        
         travel_time = drone.calculate_travel_time(target.position, config)
+        print(f"[{env.now:.1f}s] {drone.id} starting movement to {target.position} (travel time: {travel_time:.1f}s)")
+        
+        time_elapsed = 0.0
 
-        #Simulate travel time
-        yield env.timeout(travel_time)
+        # Discrete time movement with encounters
+        while time_elapsed < travel_time:
+            remaining_time = travel_time - time_elapsed
+            time_step = min(config.movement_time_step, remaining_time)
 
-        #Update drone position
+            # Update drone position
+            target_reached = drone.update_position_towards_target(
+                target.position, time_step, config.drone_speed
+            )
+            
+            # Check for drone encounters during movement
+            nearby_drones = drone.get_drones_in_encounter_range(
+                other_drones, config.drone_comm_range
+            )
+
+            # Perform encounter communications
+            if nearby_drones:
+                encounters = drone.perform_encounter_communication(
+                    nearby_drones, config, env.now + time_elapsed
+                )
+                if encounters > 0:
+                    yield env.timeout(config.encounter_communication_time)
+        
+            # Wait for this time step
+            yield env.timeout(time_step)
+            time_elapsed += time_step
+            
+            # Break if we reached target early
+            if target_reached:
+                print(f"[{env.now:.1f}s] {drone.id} reached target early")
+                break
+
+        # Ensure final position is exact
         drone.position = target.position
-        print(f"Drone {drone.id} reached {target.position} at time {env.now}")
+        print(f"[{env.now:.1f}s] {drone.id} arrived at {target.position}")
 
-        preformed_communication = False
+        performed_communication = False  # Fix typo
 
-        #These checks are based on drone comM_range, note sensor or ship comm_range. But as drone are 
-        #currently at exact sensor/ship positions this is sufficient for now
-        #TODO: Improve this when discrete time steps are implemented
-        #There should be ways to know what exact target we are traveling to, and only check that one.
-
-        #Check for sensors in range to communicate with
+        # Check for sensors in range to communicate with
         if target.entity_type == "sensor" and target.entity is not None:
             collected = drone.collect_from_sensor(target.entity, config, env.now)
             if collected > 0:
-                preformed_communication = True
+                performed_communication = True
 
-        #Check for ships in range to communicate with
+        # Check for ships in range to communicate with
         if target.entity_type == "ship" and target.entity is not None:
             delivered = drone.deliver_to_ship(target.entity, config, env.now)
             if delivered > 0:
-                preformed_communication = True
+                performed_communication = True
 
-        #Time spent on operation
-        operation_time = config.communication_wait_time if preformed_communication else config.drone_wait_no_action_time
+        # Time spent on operation
+        operation_time = config.communication_wait_time if performed_communication else config.drone_wait_no_action_time
         yield env.timeout(operation_time)
-
 #Ship processes 
 
 def ship_process(env: simpy.Environment, ship: Ship, config: SimulationConfig):
@@ -136,7 +158,8 @@ def statistics_process(env: simpy.Environment, sensors: List[Sensor], drones: Li
         print("\nDrone Status:")
         for drone in drones:
             buffer_usage = len(drone.messages) / config.drone_buffer_capacity * 100
-            print(f"  {drone.id}: {len(drone.messages)} messages ({buffer_usage:.1f}% buffer)")
+            print(f"  {drone.id}: {len(drone.messages)} messages ({buffer_usage:.1f}% buffer), "
+                  f"{drone.total_drone_encounters} encounters")  # ADD ENCOUNTER COUNT
         
         # Per-ship status  
         print("\nShip Status:")

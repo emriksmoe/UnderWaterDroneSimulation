@@ -11,6 +11,7 @@ class SimulationConfig:
     dtn_protocol: str = "epidemic"  # Options: "Epidemic", "SprayAndWait", "PRoPHET"
     drone_strategy: str = "random"   # Options: "Random", "BufferAware
 
+
     #General simulation parameters
     sim_time: int = 86400  # Total simulation time in seconds (this is 24 hours)
     area_size: Tuple[float, float] = (1000.0, 1000.0)  # Size of the simulation area (width, height) in meters
@@ -39,6 +40,9 @@ class SimulationConfig:
     drone_buffer_capacity: int = 1000  # Maximum number of messages a drone can store
     communication_wait_time: float = 10.0  # Time in seconds a drone waits to communicate when in range
     drone_wait_no_action_time: float = 3.0  # Time in seconds a drone waits when no action is possible
+
+    movement_time_step: float = 1.0  # Time step in seconds for drone movement updates
+    encounter_communication_time: float = 5.0  # Time in seconds allocated for communication during encounters
 
     #Drone random strategy parameters
     visit_ship_probability: float = 0.2  # Probability of visiting a ship when deciding next target

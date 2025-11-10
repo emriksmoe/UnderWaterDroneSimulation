@@ -21,6 +21,8 @@ class Drone:
     target_position: Optional[Position] = None  # For movement logic
     last_visited: str = "ship"  # Track last visited entity type
 
+    total_drone_encounters: int = 0  # Track total drone-to-drone encounters
+
     def calculate_travel_time(self, target: Position, config: SimulationConfig) -> float:
         distance = self.position.distance_to(target)
         return distance / config.drone_speed  # Time = Distance / Speed
@@ -119,6 +121,65 @@ class Drone:
 
         print(f"Drone {self.id} delivered {delivered_count} messages to Ship {ship.id}")
         return delivered_count
+    
+    #Methods for discrete time movment
+    def update_position_towards_target(self, target_position: Position, time_step: float, speed: float) -> bool:
+        """Update position by one time step towards target. Returns True if target reached"""
+        distance_per_step = speed * time_step
+        distance_to_target = self.position.distance_to(target_position)
+        
+        if distance_to_target <= distance_per_step:
+            # We'll reach the target in this step
+            self.position = Position(target_position.x, target_position.y, target_position.z)
+            return True
+        
+        # Move towards target by distance_per_step
+        self.position = self.position.move_towards(target_position, distance_per_step)
+        return False
+
+    def get_intermediate_position(self, target_position: Position, time_elapsed: float, total_travel_time: float) -> Position:
+        """Calculate intermediate position during movement based on time elapsed"""
+        if total_travel_time <= 0:
+            return self.position
+        
+        progress = min(time_elapsed / total_travel_time, 1.0)
+        return self.position.interpolate_to(target_position, progress)
+    
+    
+    def get_drones_in_encounter_range(self, other_drones: List['Drone'], encounter_range: float) -> List['Drone']:
+        """Find all drones within encounter range during movement"""
+        nearby_drones = []
+        
+        for other_drone in other_drones:
+            if other_drone.id == self.id:  # Skip self
+                continue
+                
+            distance = self.position.distance_to(other_drone.position)
+            if distance <= encounter_range:
+                nearby_drones.append(other_drone)
+        
+        return nearby_drones
+
+    def perform_encounter_communication(self, encountered_drones: List['Drone'], config: SimulationConfig, current_time: float) -> int:
+        """Perform bidirectional message exchange with encountered drones"""
+        total_exchanges = 0
+        
+        for other_drone in encountered_drones:
+            # Exchange messages bidirectionally
+            forward_count = self.exchange_messages_with_drone(other_drone, config, current_time)
+            receive_count = other_drone.exchange_messages_with_drone(self, config, current_time)
+            
+            if forward_count > 0 or receive_count > 0:
+                total_exchanges += 1
+
+                self.total_drone_encounters += 1 # Increment encounter count
+                other_drone.total_drone_encounters += 1
+
+                print(f"[{current_time:.1f}s] ENCOUNTER: {self.id} <-> {other_drone.id} "
+                    f"(distance: {self.position.distance_to(other_drone.position):.1f}m)")
+        
+        return total_exchanges
+
     
     #Utility Methods
 

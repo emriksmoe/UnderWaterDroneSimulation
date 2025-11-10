@@ -81,12 +81,34 @@ def calculate_latency_metrics(ships: List[Ship]) -> Dict[str, float]:
         "median": all_latencies[n//2] if n % 2 == 1 else (all_latencies[n//2-1] + all_latencies[n//2]) / 2
     }
 
+def calculate_encounter_metrics(drones: List[Drone]) -> Dict[str, Any]:
+    """Calculate drone encounter statistics"""
+    if not drones:
+        return {
+            "total_encounters": 0,
+            "avg_encounters_per_drone": 0.0,
+            "max_encounters": 0,
+            "min_encounters": 0,
+            "encounter_distribution": []
+        }
+    
+    encounter_counts = [drone.total_drone_encounters for drone in drones]
+    total_encounters = sum(encounter_counts) // 2  # Avoid double counting
+    
+    return {
+        "total_encounters": total_encounters,
+        "avg_encounters_per_drone": sum(encounter_counts) / len(encounter_counts),
+        "max_encounters": max(encounter_counts),
+        "min_encounters": min(encounter_counts),
+        "encounter_distribution": encounter_counts
+    }
+
 def analyze_simulation_results(results: Dict[str, Any]) -> Dict[str, Any]:
     """Complete analysis of simulation results"""
     sensors = results["sensors"]
     drones = results["drones"] 
     ships = results["ships"]
-    config = results.get("config")  # Handle missing config gracefully
+    config = results.get("config")
     
     analysis = {
         "delivery_ratio": calculate_delivery_ratio(sensors, ships),
@@ -95,10 +117,10 @@ def analyze_simulation_results(results: Dict[str, Any]) -> Dict[str, Any]:
         "total_messages_delivered": sum(len(ship.received_messages) for ship in ships),
         "simulation_time": results.get("simulation_time", 0),
         "network_efficiency": calculate_network_efficiency(sensors, drones, ships),
-        "latency_metrics": calculate_latency_metrics(ships)
+        "latency_metrics": calculate_latency_metrics(ships),
+        "encounter_metrics": calculate_encounter_metrics(drones)  # NEW LINE
     }
     
-    # Add buffer utilization if config available
     if config:
         analysis["buffer_utilization"] = calculate_buffer_utilization(drones, config)
     
@@ -115,6 +137,11 @@ def print_analysis_summary(analysis: Dict[str, Any]):
     print(f"Messages Generated:       {analysis['total_messages_generated']}")
     print(f"Messages Delivered:       {analysis['total_messages_delivered']}")
     print(f"Simulation Time:          {analysis['simulation_time']:.1f} seconds")
+
+    if 'encounter_metrics' in analysis:
+        enc = analysis['encounter_metrics']
+        print(f"Drone-to-Drone Encounters: {enc['total_encounters']}")
+        print(f"Avg Encounters per Drone:   {enc['avg_encounters_per_drone']:.1f}")
     
     if 'buffer_utilization' in analysis:
         buf = analysis['buffer_utilization']
@@ -129,3 +156,5 @@ def print_analysis_summary(analysis: Dict[str, Any]):
         print(f"Message Latency:          Avg: {lat['avg']:.1f}s, Median: {lat['median']:.1f}s")
     
     print("="*50)
+
+    
