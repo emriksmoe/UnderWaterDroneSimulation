@@ -2,6 +2,7 @@
 
 from src.simulation.environment import DTNSimulation
 from src.config.simulation_config import SimulationConfig
+from analysis import analyze_simulation_results, print_analysis_summary
 
 def run_dtn_simulation():
     """Function to run the DTN Simulation"""
@@ -22,6 +23,10 @@ def run_dtn_simulation():
     
     for ship in results["ships"]:
         print(f"{ship.id}: {len(ship.received_messages)} messages received")
+
+    # Analyze results
+    analysis = analyze_simulation_results(results)
+    print_analysis_summary(analysis)
 
 if __name__ == "__main__":
     run_dtn_simulation()
