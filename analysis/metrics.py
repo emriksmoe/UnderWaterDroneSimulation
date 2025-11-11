@@ -7,11 +7,18 @@ from src.agents.drone import Drone
 from src.agents.ship import Ship
 
 def calculate_delivery_ratio(sensors: List[Sensor], ships: List[Ship]) -> float:
-    """Calculate the message delivery ratio across all sensors and ships."""
+    """Calculate delivery ratio based on unique source messages"""
     total_generated = sum(sensor.data_sequence for sensor in sensors)
-    total_delivered = sum(len(ship.received_messages) for ship in ships)
-
-    return (total_delivered / total_generated) * 100 if total_generated > 0 else 0.0
+    
+    # Count unique messages by source_id + generation_time
+    unique_delivered = set()
+    for ship in ships:
+        for message in ship.received_messages:
+            # Create unique key for original message
+            original_key = f"{message.source_id}_{message.generation_time}"
+            unique_delivered.add(original_key)
+    
+    return (len(unique_delivered) / total_generated * 100) if total_generated > 0 else 0.0
 
 def calculate_average_aoi(ships: List[Ship]) -> float:
     """Calculate avrage Age of Information"""
