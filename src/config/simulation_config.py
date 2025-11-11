@@ -59,5 +59,30 @@ class SimulationConfig:
     #DTN Message parameters
     message_ttl: float = 86400.0  # Time-to-live for messages (1 day)
     message_size: int = 100  # Size of each message in bytes
+    ttl_urgency_factor: float = 0.8  # Factor to adjust urgency based on TTL remaining
+
+
+    #RL parameters
+    num_sensors_for_rl: int = 3  # Number of sensors considered in RL state representation (adds x * 3 dimensions)
+    num_ships_for_rl: int = 1    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
+    # RL Strategy parameters
+    rl_model_path: str = "models/dtn_drone_agent.pkl"
+    use_pretrained_model: bool = False
+    rl_training_mode: bool = False
+    max_episode_steps: int = 1000
+
+    # RL reward parameters  
+    reward_delivery: float = 10.0        # Reward for successful message delivery
+    reward_collection: float = 5.0       # Reward for collecting from sensor
+    reward_movement_penalty: float = -0.1 # Small penalty for movement
+    reward_buffer_overflow: float = -5.0  # Penalty for buffer overflow
+    reward_encounter: float = 2.0         # Reward for drone encounters
+    reward_idle: float = -0.5            # Penalty for idle time
+
+    # RL environment parameters
+    rl_state_space_size: int = 12        # Size of state vector for RL agent
+    rl_action_space_size: int = 3        # Number of discrete actions
+
+
 
 DEFAULT_CONFIG = SimulationConfig()
