@@ -22,6 +22,7 @@ class Drone:
     last_visited: str = "ship"  # Track last visited entity type
 
     total_drone_encounters: int = 0  # Track total drone-to-drone encounters
+    recent_encounters: dict = field(default_factory=dict)  # drone_id -> last_encounter_time (for cooldowns)
 
     def calculate_travel_time(self, target: Position, config: SimulationConfig) -> float:
         distance = self.position.distance_to(target)
@@ -161,22 +162,39 @@ class Drone:
         return nearby_drones
 
     def perform_encounter_communication(self, encountered_drones: List['Drone'], config: SimulationConfig, current_time: float) -> int:
-        """Perform bidirectional message exchange with encountered drones"""
+        """Perform bidirectional message exchange with encountered drones (with cooldown)"""
         total_exchanges = 0
         
         for other_drone in encountered_drones:
+            # Check if we've recently communicated with this drone
+            last_encounter_time = self.recent_encounters.get(other_drone.id, 0.0)
+            time_since_last_encounter = current_time - last_encounter_time
+            
+            if time_since_last_encounter < config.encounter_cooldown_time:
+                # Skip this encounter - too recent
+                continue
+            
             # Exchange messages bidirectionally
             forward_count = self.exchange_messages_with_drone(other_drone, config, current_time)
             receive_count = other_drone.exchange_messages_with_drone(self, config, current_time)
             
             if forward_count > 0 or receive_count > 0:
                 total_exchanges += 1
-
-                self.total_drone_encounters += 1 # Increment encounter count
+                
+                # Update encounter counters and history
+                self.total_drone_encounters += 1
                 other_drone.total_drone_encounters += 1
-
+                
+                # Record encounter times for both drones
+                self.recent_encounters[other_drone.id] = current_time
+                other_drone.recent_encounters[self.id] = current_time
+                
                 print(f"[{current_time:.1f}s] ENCOUNTER: {self.id} <-> {other_drone.id} "
-                    f"(distance: {self.position.distance_to(other_drone.position):.1f}m)")
+                    f"(distance: {self.position.distance_to(other_drone.position):.1f}m, "
+                    f"exchanged {forward_count + receive_count} messages)")
+            else:
+                print(f"[{current_time:.1f}s] POTENTIAL ENCOUNTER: {self.id} <-> {other_drone.id} "
+                    f"(no new messages to exchange)")
         
         return total_exchanges
 

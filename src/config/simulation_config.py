@@ -44,10 +44,11 @@ class SimulationConfig:
     movement_time_step: float = 1.0  # Time step in seconds for drone movement updates
     encounter_communication_time: float = 5.0  # Time in seconds allocated for communication during encounters
 
+
     #Drone random strategy parameters
     visit_ship_probability: float = 0.2  # Probability of visiting a ship when deciding next target
     random_strat_buffer_threshold: float = 0.9  # Threshold of buffer usage to trigger ship visit
-    
+    encounter_cooldown_time: float = 60.0  # Minimum time between encounters with same drone (seconds)
     #Ship parameters
     
 
