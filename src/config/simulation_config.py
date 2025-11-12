@@ -62,9 +62,13 @@ class SimulationConfig:
     ttl_urgency_factor: float = 0.8  # Factor to adjust urgency based on TTL remaining
 
 
-    #RL parameters
-    num_sensors_for_rl: int = 3  # Number of sensors considered in RL state representation (adds x * 3 dimensions)
-    num_ships_for_rl: int = 1    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
+    #RL dimentions parameters
+    sensors_state_space: int = 3  # Number of sensors considered in RL state representation (adds x * 3 dimensions)
+    ships_state_space: int = 1    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
+
+    #RL drone pasrameters
+    rl_num_drones: int = 5  # Number of drones in the RL environment
+    
     # RL Strategy parameters
     rl_model_path: str = "models/dtn_drone_agent.pkl"
     use_pretrained_model: bool = False
@@ -79,9 +83,7 @@ class SimulationConfig:
     reward_encounter: float = 2.0         # Reward for drone encounters
     reward_idle: float = -0.5            # Penalty for idle time
 
-    # RL environment parameters
-    rl_state_space_size: int = 12        # Size of state vector for RL agent
-    rl_action_space_size: int = 3        # Number of discrete actions
+    # RL environment parameters   # Number of discrete actions
 
 
 

@@ -15,7 +15,7 @@ class RLStateManager:
         self.config = config
 
     def get_drone_state(self, drone: Drone, sensors: List[Sensor], ships: List[Ship], current_time: float) -> np.ndarray:
-        """Converts simulation state to RL state for a drone agent, only observable information (16 dims)."""
+        """Converts simulation state to RL state for a drone agent, only observable information (7 + 3 * K + 3 * M dims)."""
         # 1 - Normalized drone position to [-1, 1] (3 dims)
         normalized_position = self._normalize_position(drone.position)
 
@@ -26,10 +26,10 @@ class RLStateManager:
         message_aoi_info = self._get_message_aoi_info(drone, current_time)
 
         #4 - Top K nearest sensors info (K * 3 dims)
-        sensor_info = self._get_top_k_sensor_info(drone, sensors, self.config.num_sensors_for_rl)
+        sensor_info = self._get_top_k_sensor_info(drone, sensors, self.config.sensors_state_space)
 
         #5 - Top K nearest ships info (M * 3 dims)
-        ship_info = self._get_top_k_ship_info(drone, ships, self.config.num_ships_for_rl)
+        ship_info = self._get_top_m_ship_info(drone, ships, self.config.ships_state_space)
 
         #totalt dimentions: 3 + 1 + 3 + (K*3) + (M*3) = 
         state = np.concatenate([
@@ -90,6 +90,8 @@ class RLStateManager:
         sensor_distances = [(sensor, drone.position.distance_to(sensor.position)) 
                         for sensor in sensors]
         sensor_distances.sort(key=lambda x: x[1])
+
+        max_possible_distance = np.sqrt(self.config.area_size[0]**2 + self.config.area_size[1]**2 + self.config.depth_range**2)
         
         sensor_info = []
         for i in range(k):
@@ -97,7 +99,7 @@ class RLStateManager:
                 sensor, distance = sensor_distances[i]
                 
                 # Distance (normalized)
-                distance_norm = min(distance / 1000.0, 1.0)
+                distance_norm = min(distance / max_possible_distance, 1.0)
                 
                 # Direction vector
                 dx = sensor.position.x - drone.position.x  
@@ -117,23 +119,25 @@ class RLStateManager:
         
         return np.array(sensor_info)
     
-    def _get_top_k_ship_info(self, drone: Drone, ships: List[Ship], k: int) -> np.ndarray:
-        """Get info for K nearest ships (k * 3 dimensions)"""
+    def _get_top_m_ship_info(self, drone: Drone, ships: List[Ship], m: int) -> np.ndarray:
+        """Get info for M nearest ships (m * 3 dimensions)"""
         if not ships:
-            return np.ones(k * 3)  # Max distance padding
+            return np.ones(m * 3)  # Max distance padding
         
         # Sort ships by distance
         ship_distances = [(ship, drone.position.distance_to(ship.position)) 
                          for ship in ships]
         ship_distances.sort(key=lambda x: x[1])
+
+        max_possible_distance = np.sqrt(self.config.area_size[0]**2 + self.config.area_size[1]**2 + self.config.depth_range**2)
         
         ship_info = []
-        for i in range(k):
+        for i in range(m):
             if i < len(ship_distances):
                 ship, distance = ship_distances[i]
                 
                 # Distance (normalized)
-                distance_norm = min(distance / 1000.0, 1.0)
+                distance_norm = min(distance / max_possible_distance, 1.0)
                 
                 # Direction vector
                 dx = ship.position.x - drone.position.x  
