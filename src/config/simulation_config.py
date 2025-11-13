@@ -62,6 +62,8 @@ class SimulationConfig:
     ttl_urgency_factor: float = 0.8  # Factor to adjust urgency based on TTL remaining
 
 
+    #RL parametes
+
     #RL dimentions parameters
     sensors_state_space: int = 3  # Number of sensors considered in RL state representation (adds x * 3 dimensions)
     ships_state_space: int = 1    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
@@ -76,12 +78,28 @@ class SimulationConfig:
     max_episode_steps: int = 1000
 
     # RL reward parameters  
-    reward_delivery: float = 10.0        # Reward for successful message delivery
-    reward_collection: float = 5.0       # Reward for collecting from sensor
-    reward_movement_penalty: float = -0.1 # Small penalty for movement
-    reward_buffer_overflow: float = -5.0  # Penalty for buffer overflow
-    reward_encounter: float = 2.0         # Reward for drone encounters
-    reward_idle: float = -0.5            # Penalty for idle time
+    reward_collection_base: float = 5.0              # Base reward for any collection
+    reward_collection_urgency_multiplier: float = 15.0  # Multiplier for urgency (age_ratio)
+    
+    # Delivery rewards - scale with freshness (inverse of AoI)
+    reward_delivery_base: float = 10.0               # Base reward for any delivery
+    reward_delivery_freshness_multiplier: float = 25.0  # Multiplier for freshness (1 - age_ratio)
+    
+    # Time and carrying penalties
+    penalty_time_per_second: float = -0.1             # Penalty per second of travel
+    penalty_carrying_per_age_unit: float = -0.01      # Penalty per second of message age carried
+    
+    # Episode-end progressive penalties
+    penalty_undelivered_base: float = -10.0          # Base penalty for any undelivered message
+    penalty_undelivered_age_multiplier: float = -0.05 # Penalty multiplier per second of age
+    penalty_uncollected_multiplier: float = 2.0      # Extra multiplier for never-collected messages
+    
+    # Action penalties
+    penalty_empty_sensor: float = -2.0
+    penalty_ship_no_messages: float = -1.0
+    penalty_explore: float = -0.5
+    penalty_buffer_overflow: float = -10.0
+  
 
     # RL environment parameters   # Number of discrete actions
 

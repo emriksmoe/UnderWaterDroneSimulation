@@ -7,12 +7,14 @@ from gymnasium import spaces
 import random
 
 from src.config.simulation_config import SimulationConfig
-from src.rl.rl_state_manager import RLStateManager
+from src.rl.state_manager import RLStateManager
 from src.agents.drone import Drone
 from src.agents.sensor import Sensor
 from src.agents.ship import Ship
 from src.utils.position import Position
 from src.protocols.dtn_protocol import DTNMessage
+from src.protocols.dtn_protocol import EpidemicProtocol
+
 
 
 class DTNDroneEnvironment(gym.Env):
@@ -23,6 +25,7 @@ class DTNDroneEnvironment(gym.Env):
 
         self.config = config
         self.state_manager = RLStateManager(config)
+
 
         # State space: Must match the output of the state manager
         K = self.config.sensors_state_space
@@ -48,6 +51,9 @@ class DTNDroneEnvironment(gym.Env):
         self.mock_sensors: List[Sensor] = []
         self.mock_ships: List[Ship] = []
 
+        #Initialize sensor timing tracking
+        self.sensor_next_generation_times = {}  
+
         # Episode statistics
         self.episode_stats = {
             'messages_delivered': 0,
@@ -58,12 +64,22 @@ class DTNDroneEnvironment(gym.Env):
             'explore_actions': 0
         }
 
+        #AoI tracking
+        self.aoi_metrics = {
+            "delivered_messages": [],       # List of delivered message AoI values
+            "collected_messages": [],       # List of AoI when messages were collected
+            "episode_start_time": 0.0,
+            "episode_end_time": 0.0
+        }
+
     def reset(self, seed=None, options=None):
         """Reset environment state for a new episode."""
         super().reset(seed=seed)
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
+
+        self.sensor_next_generation_times = {} # Reset sensor timing tracking
 
         self._initialize_mock_simulation()
 
@@ -78,6 +94,13 @@ class DTNDroneEnvironment(gym.Env):
             'sensor_visits': 0,
             'ship_visits': 0,
             'explore_actions': 0
+        }
+        # Reset AoI tracking
+        self.aoi_metrics = {
+            "delivered_messages": [],
+            "collected_messages": [],
+            "episode_start_time": self.current_time,
+            "episode_end_time": 0.0
         }
 
         # Get initial state
@@ -118,6 +141,27 @@ class DTNDroneEnvironment(gym.Env):
         self.current_step += 1
         done = self.current_step >= self.max_steps
         truncated = self.current_time >= self.config.sim_time
+
+        if done or truncated:
+            self.aoi_metrics["episode_end_time"] = self.current_time
+            
+            # Calculate comprehensive AoI metrics
+            global_aoi_metrics = self._calculate_global_aoi_metrics()
+            
+            # Add AoI metrics to info
+            info.update({
+                "aoi_metrics": global_aoi_metrics,
+                "detailed_aoi_data": self.aoi_metrics
+            })
+            
+            # Episode-end AoI penalty using actual metrics
+            episode_end_penalty = self._calculate_episode_end_aoi_penalty_from_metrics(global_aoi_metrics)
+            step_reward += episode_end_penalty
+            
+            print(f"Episode AoI Summary:")
+            print(f"  Delivered: {global_aoi_metrics['delivered']['count']} msgs, mean AoI: {global_aoi_metrics['delivered']['mean_aoi']:.1f}s")
+            print(f"  Undelivered: {global_aoi_metrics['undelivered']['count']} msgs, mean current AoI: {global_aoi_metrics['undelivered']['mean_current_aoi']:.1f}s")
+            print(f"  Delivery rate: {global_aoi_metrics['global']['delivery_rate']:.1%}")
         
         # Update episode reward
         self.episode_reward += step_reward
@@ -177,10 +221,12 @@ class DTNDroneEnvironment(gym.Env):
         """Execute the given action and return the reward."""
         
         travel_distance = prev_position.distance_to(target_position)
+        travel_time = travel_distance / self.config.drone_speed
         
         # Move drone to target
         self.mock_drone.position = target_position
         self.episode_stats['total_distance_traveled'] += travel_distance
+        self.current_time += travel_time
         
         reward = 0.0
         
@@ -189,6 +235,7 @@ class DTNDroneEnvironment(gym.Env):
             self.episode_stats['sensor_visits'] += 1
             
             if target_entity.has_messages():
+                collected_reward = 0.0
                 # Collect messages
                 available_space = self.config.drone_buffer_capacity - len(self.mock_drone.messages)
                 messages_collected = 0
@@ -196,6 +243,24 @@ class DTNDroneEnvironment(gym.Env):
                 while (available_space > 0 and target_entity.has_messages()):
                     message = target_entity.get_next_message_for_collection()
                     if message:
+                        #Collecting AoI tracking
+                        collection_aoi = self.current_time - message.generation_time
+                        age_ratio = min(collection_aoi / self.config.message_ttl, 1.0)  # Cap at 1.0
+                        self.aoi_metrics["collected_messages"].append({
+                            "message_id": message.id,
+                            "collection_time": self.current_time,
+                            "generation_time": message.generation_time,
+                            "collection_aoi": collection_aoi,
+                            "sensor_id": target_entity.id
+                        })
+                    # PROGRESSIVE collection reward based on urgency
+                        urgency_reward = (
+                            self.config.reward_collection_base + 
+                            (age_ratio * self.config.reward_collection_urgency_multiplier)
+                        )
+                        collected_reward += urgency_reward
+                        
+
                         self.mock_drone.messages.append(message)
                         messages_collected += 1
                         available_space -= 1
@@ -204,40 +269,154 @@ class DTNDroneEnvironment(gym.Env):
                 
                 if messages_collected > 0:
                     self.episode_stats['messages_collected'] += messages_collected
-                    reward += messages_collected * self.config.reward_collection
+                    reward += collected_reward
             else:
                 # Penalty for visiting empty sensor
-                reward += self.config.reward_idle * 0.5
+                reward += self.config.penalty_empty_sensor
         
         # Ship interaction  
-        elif action_type == "ship" and target_entity and len(self.mock_drone.messages) > 0:
-            messages_delivered = len(self.mock_drone.messages)
-            
-            # Deliver all messages
-            for message in self.mock_drone.messages:
-                target_entity.receive_message(message, self.current_time)
-            
-            self.mock_drone.messages.clear()
-            
-            self.episode_stats['messages_delivered'] += messages_delivered
+        elif action_type == "ship" and target_entity:
             self.episode_stats['ship_visits'] += 1
-            reward += messages_delivered * self.config.reward_delivery
+
+            if len(self.mock_drone.messages) > 0: #If there are messages to deliver
+                delivery_reward = 0.0
+                messages_delivered = len(self.mock_drone.messages)
+
+                # Track AoI for each delivered message
+                for message in self.mock_drone.messages:
+                    delivery_aoi = self.current_time - message.generation_time
+                    age_ratio = min(delivery_aoi / self.config.message_ttl, 1.0)  # Cap at 1.0
+                    freshness_ratio = 1.0 - age_ratio
+                    self.aoi_metrics["delivered_messages"].append({
+                        "message_id": message.id,
+                        "delivery_time": self.current_time,
+                        "generation_time": message.generation_time,
+                        "delivery_aoi": delivery_aoi,
+                        "ship_id": target_entity.id
+                    })
+
+                    freshness_reward = (
+                    self.config.reward_delivery_base + 
+                    (freshness_ratio * self.config.reward_delivery_freshness_multiplier)
+                    )
+                    delivery_reward += freshness_reward
+                            
+                # Deliver all messages
+                for message in self.mock_drone.messages:
+                    target_entity.receive_message(message, self.current_time)
+                
+                self.mock_drone.messages.clear()
+                
+                self.episode_stats['messages_delivered'] += messages_delivered
+                reward += delivery_reward
+            else:
+                # Penalty for visiting ship with no messages
+                reward += self.config.penalty_ship_no_messages
         
         # Explore action
         elif action_type == "explore":
             self.episode_stats['explore_actions'] += 1
-            reward += self.config.reward_idle * 0.2
+            reward += self.config.penalty_explore
         
         # Movement penalty
-        reward += travel_distance * self.config.reward_movement_penalty
+        reward += travel_time * self.config.penalty_time_per_second
         
+        for message in self.mock_drone.messages:
+            message_age = self.current_time - message.generation_time
+            reward += message_age * self.config.penalty_carrying_per_age_unit
         # Buffer management
         buffer_usage = len(self.mock_drone.messages) / self.config.drone_buffer_capacity
         if buffer_usage >= 0.95:
-            reward += self.config.reward_buffer_overflow
+            reward += self.config.penalty_buffer_overflow
         
         return reward
     
+    def _calculate_global_aoi_metrics(self) -> dict:
+        """Calculate comprehensive AoI metrics at episode end"""
+        
+        # 1. Delivered message AoI statistics
+        delivered_aois = [msg["delivery_aoi"] for msg in self.aoi_metrics["delivered_messages"]]
+        
+        # 2. Undelivered message AoI (current age)
+        undelivered_aois = []
+        
+        # Messages still in sensors
+        for sensor in self.mock_sensors:
+            for message in sensor.messages:
+                current_aoi = self.current_time - message.generation_time
+                undelivered_aois.append({
+                    "message_id": message.id,
+                    "current_aoi": current_aoi,
+                    "location": "sensor",
+                    "entity_id": sensor.id
+                })
+        
+        # Messages still in drone buffer
+        for message in self.mock_drone.messages:
+            current_aoi = self.current_time - message.generation_time
+            undelivered_aois.append({
+                "message_id": message.id,
+                "current_aoi": current_aoi,
+                "location": "drone",
+                "entity_id": self.mock_drone.id
+            })
+        
+        # Calculate statistics
+        metrics = {
+            "delivered": {
+                "count": len(delivered_aois),
+                "mean_aoi": sum(delivered_aois) / len(delivered_aois) if delivered_aois else 0.0,
+                "min_aoi": min(delivered_aois) if delivered_aois else 0.0,
+                "max_aoi": max(delivered_aois) if delivered_aois else 0.0
+            },
+            "undelivered": {
+                "count": len(undelivered_aois),
+                "total_current_aoi": sum(msg["current_aoi"] for msg in undelivered_aois),
+                "mean_current_aoi": sum(msg["current_aoi"] for msg in undelivered_aois) / len(undelivered_aois) if undelivered_aois else 0.0,
+                "in_sensors": len([msg for msg in undelivered_aois if msg["location"] == "sensor"]),
+                "in_drone": len([msg for msg in undelivered_aois if msg["location"] == "drone"])
+            },
+            "global": {
+                "total_messages": len(delivered_aois) + len(undelivered_aois),
+                "delivery_rate": len(delivered_aois) / (len(delivered_aois) + len(undelivered_aois)) if (len(delivered_aois) + len(undelivered_aois)) > 0 else 0.0,
+                "system_aoi": sum(delivered_aois) + sum(msg["current_aoi"] for msg in undelivered_aois)
+            }
+        }
+        
+        return metrics
+    
+    def _calculate_episode_end_aoi_penalty_from_metrics(self, global_aoi_metrics: dict) -> float:
+        """Calculate progressive episode-end penalty based on actual AoI values"""
+        total_penalty = 0.0
+        
+        # Progressive penalties for messages still in sensors (never collected)
+        for sensor in self.mock_sensors:
+            for message in sensor.messages:
+                message_age = self.current_time - message.generation_time
+                
+                # Progressive penalty based on actual age
+                age_penalty = (
+                    self.config.penalty_undelivered_base + 
+                    (message_age * self.config.penalty_undelivered_age_multiplier)
+                )
+                
+                # Extra penalty multiplier for never being collected
+                uncollected_penalty = age_penalty * self.config.penalty_uncollected_multiplier
+                total_penalty += uncollected_penalty
+        
+        # Progressive penalties for messages in drone buffer (collected but not delivered)
+        for message in self.mock_drone.messages:
+            message_age = self.current_time - message.generation_time
+            
+            # Progressive penalty based on actual age (less severe than uncollected)
+            age_penalty = (
+                self.config.penalty_undelivered_base + 
+                (message_age * self.config.penalty_undelivered_age_multiplier)
+            )
+            total_penalty += age_penalty
+        
+        return total_penalty
+        
     def _initialize_mock_simulation(self):
         """Initialize mock simulation components with realistic entity counts"""
         # Create mock drone at random position
@@ -247,30 +426,47 @@ class DTNDroneEnvironment(gym.Env):
         
         self.mock_drone = Drone(
             id="training_drone",
-            position=Position(start_x, start_y, start_z)
+            position=Position(start_x, start_y, start_z),
+            protocol=EpidemicProtocol("training_drone"),
+            movement_strategy=None  # No movement strategy needed for mock
         )
         
         # Create realistic number of sensors (more than state space)
         self.mock_sensors = []
-        total_sensors = max(self.config.num_sensors, 8)  # At least 8 for variety
+        total_sensors = max(self.config.num_sensors, 8)
+        
+        # Track when each sensor should generate its next message (EXTERNAL TRACKING)
+        self.sensor_next_generation_times = {}  # Dictionary to track timing per sensor
         
         for i in range(total_sensors):
-            # Random placement across simulation area
             x = random.uniform(0, self.config.area_size[0])
             y = random.uniform(0, self.config.area_size[1])
             z = random.uniform(self.config.min_depth, self.config.depth_range)
             
             sensor = Sensor(id=f'mock_sensor_{i}', position=Position(x, y, z))
             
-            # Add some random initial messages
+            # Track timing externally using sensor ID as key
+            self.sensor_next_generation_times[sensor.id] = (
+                self.current_time + random.uniform(0, self.config.data_generation_interval)
+            )
+            
+            # Add some initial messages with realistic timing
             if random.random() < 0.6:  # 60% chance of having messages
-                for j in range(random.randint(1, 5)):
+                num_initial = random.randint(1, 5)
+                for j in range(num_initial):
+                    # Messages generated in the past at regular intervals
+                    past_generation_time = (
+                        self.current_time - 
+                        ((num_initial - j) * self.config.data_generation_interval) - 
+                        random.uniform(0, self.config.data_generation_interval)
+                    )
+                    
                     msg = DTNMessage(
                         id=f'msg_{i}_{j}',
                         source_id=sensor.id,
                         destination_id="surface_gateway",
                         data=f"mock_data_{j}",
-                        generation_time=self.current_time - random.uniform(0, 1800),
+                        generation_time=past_generation_time,
                         hop_count=0,
                         priority=1,
                         ttl=self.config.message_ttl,
@@ -292,24 +488,29 @@ class DTNDroneEnvironment(gym.Env):
             self.mock_ships.append(ship)
 
     def _update_simulation_state(self):
-        """Update simulation state"""
-        time_step = 10.0
-        self.current_time += time_step
+        """Update simulation state with fixed interval message generation"""
         
-        # Generate new messages
+        # Fixed interval message generation (matching real simulation)
         for sensor in self.mock_sensors:
-            if len(sensor.messages) < self.config.sensor_buffer_capacity:
-                if random.random() < 0.1:
+            # Check if it's time for this sensor to generate a message
+            if (sensor.id in self.sensor_next_generation_times and 
+                self.current_time >= self.sensor_next_generation_times[sensor.id]):
+                
+                # Generate message if buffer has space
+                if len(sensor.messages) < self.config.sensor_buffer_capacity:
                     new_msg = sensor.generate_message(self.current_time, self.config)
                     sensor.add_message_to_buffer(new_msg, self.config)
+                
+                # Schedule next message generation
+                self.sensor_next_generation_times[sensor.id] += self.config.data_generation_interval
         
         # Age out expired messages
         for sensor in self.mock_sensors:
             sensor.messages = [msg for msg in sensor.messages 
-                             if (self.current_time - msg.generation_time) < msg.ttl]
+                            if (self.current_time - msg.generation_time) <= msg.ttl]
         
         self.mock_drone.messages = [msg for msg in self.mock_drone.messages
-                                  if (self.current_time - msg.generation_time) < msg.ttl]
+                                if (self.current_time - msg.generation_time) <= msg.ttl]
 
     def close(self):
         """Clean up environment"""

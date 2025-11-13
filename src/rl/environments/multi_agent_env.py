@@ -1,5 +1,7 @@
 """Multi-Agent OpenAI Gym environment for DTN drone simulation"""
 
+#TODO: This file is not finished, missing a lot of functionality compared to single-agent env
+
 import gymnasium as gym
 import numpy as np
 from typing import List, Tuple, Optional
@@ -7,7 +9,7 @@ from gymnasium import spaces
 import random
 
 from src.config.simulation_config import SimulationConfig
-from src.rl.rl_state_manager import RLStateManager
+from src.rl.state_manager import RLStateManager
 from src.agents.drone import Drone
 from src.agents.sensor import Sensor
 from src.agents.ship import Ship
@@ -309,7 +311,7 @@ class MultiAgentDTNEnvironment(gym.Env):
             start_z = random.uniform(self.config.min_depth, self.config.depth_range)
             
             drone = Drone(
-                id=f"training_drone_{i}",
+                id=f"training_drone_{i+1}",
                 position=Position(start_x, start_y, start_z)
             )
             self.mock_drones.append(drone)
