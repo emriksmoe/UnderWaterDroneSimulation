@@ -5,7 +5,7 @@ from typing import List, Optional
 from ..protocols.dtn_protocol import DTNMessage, DTNProtocol
 from ..utils.position import Position
 from ..config.simulation_config import SimulationConfig
-from ..strategies.movement_strategy import MovementStrategy, TargetResult
+from ..movement.movement_strategy import MovementStrategy, TargetResult
 
 from .sensor import Sensor
 from .ship import Ship

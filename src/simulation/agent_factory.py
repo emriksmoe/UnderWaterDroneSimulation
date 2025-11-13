@@ -11,7 +11,7 @@ from ..config.simulation_config import SimulationConfig
 
 #These values will be chosen later, to compare strategies and protocols
 from ..protocols.dtn_protocol import EpidemicProtocol
-from ..strategies.random_movement import RandomMovementStrategy
+from ..movement.random_movement import RandomMovementStrategy
 
 class AgentFactory:
     """Factory class for creating agents in the simulation"""

@@ -7,7 +7,7 @@ from gymnasium import spaces
 import random
 
 from src.config.simulation_config import SimulationConfig
-from src.movement.rl_state_manager import RLStateManager
+from src.rl.rl_state_manager import RLStateManager
 from src.agents.drone import Drone
 from src.agents.sensor import Sensor
 from src.agents.ship import Ship
