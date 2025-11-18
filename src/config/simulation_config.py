@@ -65,8 +65,8 @@ class SimulationConfig:
     #RL parametes
 
     #RL dimentions parameters
-    sensors_state_space: int = 3  # Number of sensors considered in RL state representation (adds x * 3 dimensions)
-    ships_state_space: int = 1    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
+    sensors_state_space: int = num_sensors # Number of sensors considered in RL state representation (adds x * 3 dimensions)
+    ships_state_space: int = num_ships    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
 
     #RL drone pasrameters
     rl_num_drones: int = 5  # Number of drones in the RL environment

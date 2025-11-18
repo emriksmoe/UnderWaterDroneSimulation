@@ -126,8 +126,12 @@ class DTNDroneEnvironment(gym.Env):
         # Convert action to target
         target_position, target_entity, action_type = self._action_to_target(action)
 
-        # Execute action and get reward
+        # Execute action and get immediate AoI rewards
         step_reward = self._execute_action(target_position, target_entity, action_type, prev_position)
+        
+        # Add continuous AoI pressure
+        aoi_pressure = self._calculate_continuous_aoi_pressure()
+        step_reward += aoi_pressure
 
         # Update simulation state
         self._update_simulation_state()
@@ -141,31 +145,8 @@ class DTNDroneEnvironment(gym.Env):
         self.current_step += 1
         done = self.current_step >= self.max_steps
         truncated = self.current_time >= self.config.sim_time
-
-        if done or truncated:
-            self.aoi_metrics["episode_end_time"] = self.current_time
-            
-            # Calculate comprehensive AoI metrics
-            global_aoi_metrics = self._calculate_global_aoi_metrics()
-            
-            # Add AoI metrics to info
-            info.update({
-                "aoi_metrics": global_aoi_metrics,
-                "detailed_aoi_data": self.aoi_metrics
-            })
-            
-            # Episode-end AoI penalty using actual metrics
-            episode_end_penalty = self._calculate_episode_end_aoi_penalty_from_metrics(global_aoi_metrics)
-            step_reward += episode_end_penalty
-            
-            print(f"Episode AoI Summary:")
-            print(f"  Delivered: {global_aoi_metrics['delivered']['count']} msgs, mean AoI: {global_aoi_metrics['delivered']['mean_aoi']:.1f}s")
-            print(f"  Undelivered: {global_aoi_metrics['undelivered']['count']} msgs, mean current AoI: {global_aoi_metrics['undelivered']['mean_current_aoi']:.1f}s")
-            print(f"  Delivery rate: {global_aoi_metrics['global']['delivery_rate']:.1%}")
         
-        # Update episode reward
-        self.episode_reward += step_reward
-        
+        # Initialize info dictionary FIRST
         info = {
             "episode_step": self.current_step,
             "simulation_time": self.current_time,
@@ -175,6 +156,28 @@ class DTNDroneEnvironment(gym.Env):
             "step_reward": step_reward,
             "stats": self.episode_stats.copy()
         }
+        
+        # Episode-end AoI penalty for undelivered messages
+        if done or truncated:
+            self.aoi_metrics["episode_end_time"] = self.current_time
+            
+            # Calculate comprehensive AoI metrics
+            global_aoi_metrics = self._calculate_global_aoi_metrics()
+            
+            # Calculate episode-end penalty
+            episode_end_penalty = self._calculate_episode_end_aoi_penalty_from_metrics(global_aoi_metrics)
+            step_reward += episode_end_penalty
+            
+            # Add AoI metrics to info (NOW info is defined)
+            info.update({
+                "aoi_metrics": global_aoi_metrics,
+                "detailed_aoi_data": self.aoi_metrics,
+                "episode_end_penalty": episode_end_penalty,
+                "undelivered_messages": self._count_undelivered_messages()
+            })
+        
+        # Update episode reward
+        self.episode_reward += step_reward
         
         return new_state, step_reward, done, truncated, info
 
@@ -416,6 +419,43 @@ class DTNDroneEnvironment(gym.Env):
             total_penalty += age_penalty
         
         return total_penalty
+    
+
+    def _calculate_continuous_aoi_pressure(self) -> float:
+        """Small continuous penalty proportional to system-wide AoI"""
+        total_aoi = 0.0
+        message_count = 0
+        
+        # Calculate total system AoI for all undelivered messages
+        for sensor in self.mock_sensors:
+            for message in sensor.messages:
+                message_age = self.current_time - message.generation_time
+                total_aoi += message_age
+                message_count += 1
+        
+        for message in self.mock_drone.messages:
+            message_age = self.current_time - message.generation_time
+            total_aoi += message_age
+            message_count += 1
+        
+        if message_count > 0:
+            # Small penalty proportional to mean system AoI
+            mean_aoi = total_aoi / message_count
+            return -mean_aoi * 0.001  # Small continuous pressure (negative penalty)
+        return 0.0
+
+    def _count_undelivered_messages(self) -> dict:
+        """Count undelivered messages for episode stats"""
+        sensor_messages = sum(len(sensor.messages) for sensor in self.mock_sensors)
+        drone_messages = len(self.mock_drone.messages)
+        
+        return {
+            "in_sensors": sensor_messages,
+            "in_drone": drone_messages,
+            "total": sensor_messages + drone_messages
+        }
+
+    
         
     def _initialize_mock_simulation(self):
         """Initialize mock simulation components with realistic entity counts"""
