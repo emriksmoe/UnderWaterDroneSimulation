@@ -62,7 +62,7 @@ def create_environment(config: SimulationConfig):
     
     # Wrap with Monitor for logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = f"./logs/training_{timestamp}/"
+    log_dir = f"./logs/single_agent/training_{timestamp}/"
     os.makedirs(log_dir, exist_ok=True)
     
     env = Monitor(env, log_dir)
@@ -143,7 +143,7 @@ def create_callbacks(env, log_dir: str):
 def train_dqn_agent():
     """Main training function"""
     
-    print("🚀 Starting DQN Training for DTN Drone AoI Optimization")
+    print("Starting DQN Training for DTN Drone AoI Optimization")
     print("=" * 60)
     
     # Create configuration
@@ -200,7 +200,7 @@ def train_dqn_agent():
 def test_trained_model(model, env, episodes):
     """Test the trained model and show performance"""
     
-    print(f"\n🔬 Testing trained model for {episodes} episodes...")
+    print(f"\nTesting trained model for {episodes} episodes...")
     
     total_rewards = []
     total_delivered = []

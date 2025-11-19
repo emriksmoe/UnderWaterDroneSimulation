@@ -6,6 +6,30 @@ import numpy as np
 from stable_baselines3 import DQN
 from src.rl.environments.single_agent_env import DTNDroneEnvironment
 from src.config.simulation_config import SimulationConfig
+import os
+import glob
+from pathlib import Path
+
+def find_latest_model_path(logs_dir="./logs", model_name="best_model.zip"):
+    """Find the most recent trained model automatically"""
+    
+    # Find all training folders
+    training_folders = glob.glob(os.path.join(logs_dir, "training_*"))
+    
+    if not training_folders:
+        raise FileNotFoundError(f"No training folders found in {logs_dir}")
+    
+    # Sort by folder name (which includes timestamp) - most recent first
+    training_folders.sort(reverse=True)
+    
+    # Look for the model in the latest folder
+    for folder in training_folders:
+        model_path = os.path.join(folder, "best_model", model_name)
+        if os.path.exists(model_path):
+            return model_path
+    
+    raise FileNotFoundError(f"No {model_name} found in any training folder")
+
 
 def test_single_episode(model, env):
     """Test the model for one episode and return detailed results"""
@@ -137,7 +161,14 @@ def main():
     print("=" * 60)
     
     # Load model
-    model_path = "./logs/training_20251118_211625/best_model/best_model.zip"
+    try:
+        model_path = find_latest_model_path()
+        print(f"🔍 Auto-detected latest model: {model_path}")
+    except FileNotFoundError as e:
+        print(f"{e}")
+        print("Make sure you've run training first:")
+        print("   python -m src.rl.training.train_single_agent")
+        return
     
     try:
         model = DQN.load(model_path)

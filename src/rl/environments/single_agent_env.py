@@ -2,7 +2,7 @@
 
 import gymnasium as gym
 import numpy as np
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Tuple, Optional
 from gymnasium import spaces
 import random
 
@@ -528,29 +528,43 @@ class DTNDroneEnvironment(gym.Env):
             self.mock_ships.append(ship)
 
     def _update_simulation_state(self):
-        """Update simulation state with fixed interval message generation"""
+        """Enhanced state update to match real simulation behavior"""
         
-        # Fixed interval message generation (matching real simulation)
+        # Track time delta for continuous message generation
+        time_delta = self.current_time - getattr(self, 'last_sim_update', 0)
+        self.last_sim_update = self.current_time
+        
+        # Generate messages that should have occurred during time delta
         for sensor in self.mock_sensors:
-            # Check if it's time for this sensor to generate a message
-            if (sensor.id in self.sensor_next_generation_times and 
-                self.current_time >= self.sensor_next_generation_times[sensor.id]):
-                
-                # Generate message if buffer has space
-                if len(sensor.messages) < self.config.sensor_buffer_capacity:
-                    new_msg = sensor.generate_message(self.current_time, self.config)
-                    sensor.add_message_to_buffer(new_msg, self.config)
-                
-                # Schedule next message generation
-                self.sensor_next_generation_times[sensor.id] += self.config.data_generation_interval
+            if sensor.id in self.sensor_next_generation_times:
+                # Generate all messages that should have been created up to current time
+                while self.sensor_next_generation_times[sensor.id] <= self.current_time:
+                    # Match real simulation buffer behavior: drop oldest if full
+                    if len(sensor.messages) >= self.config.sensor_buffer_capacity:
+                        sensor.messages.pop(0)  # FIFO like real simulation
+                    
+                    gen_time = self.sensor_next_generation_times[sensor.id]
+                    new_msg = sensor.generate_message(gen_time, self.config)
+                    sensor.messages.append(new_msg)
+                    
+                    # Schedule next message generation
+                    self.sensor_next_generation_times[sensor.id] += self.config.data_generation_interval
         
-        # Age out expired messages
-        for sensor in self.mock_sensors:
-            sensor.messages = [msg for msg in sensor.messages 
-                            if (self.current_time - msg.generation_time) <= msg.ttl]
+        # TTL cleanup (match real simulation frequency)
+        if not hasattr(self, 'last_ttl_check'):
+            self.last_ttl_check = 0
         
-        self.mock_drone.messages = [msg for msg in self.mock_drone.messages
+        if self.current_time - self.last_ttl_check >= self.config.message_ttl_check_interval:
+            # Remove expired messages from sensors
+            for sensor in self.mock_sensors:
+                sensor.messages = [msg for msg in sensor.messages 
                                 if (self.current_time - msg.generation_time) <= msg.ttl]
+            
+            # Remove expired messages from drone
+            self.mock_drone.messages = [msg for msg in self.mock_drone.messages
+                                    if (self.current_time - msg.generation_time) <= msg.ttl]
+            
+            self.last_ttl_check = self.current_time
 
     def close(self):
         """Clean up environment"""

@@ -71,7 +71,7 @@ class SimulationConfig:
     ships_state_space: int = num_ships    # Number of ships considered in RL state representation ( adds x * 3 dimensions)
 
     #RL drone pasrameters
-    rl_num_drones: int = num_drones  # Number of drones in the RL environment
+    rl_num_drones: int = 5  # Number of drones in the multi drone RL environment
     
     # RL Strategy parameters
     rl_model_path: str = "models/dtn_drone_agent.pkl"
