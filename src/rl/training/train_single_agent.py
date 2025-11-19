@@ -10,8 +10,6 @@ from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
-import matplotlib.pyplot as plt
 
 from src.rl.environments.single_agent_env import DTNDroneEnvironment
 from src.config.simulation_config import SimulationConfig
@@ -46,11 +44,11 @@ class AoILoggingCallback:
                     delivery_rate = aoi_data['global']['delivery_rate']
                     mean_delivery_aoi = aoi_data['delivered']['mean_aoi']
                     
-                    print(f"\n📊 Episode {self.episode_count} AoI Metrics:")
-                    print(f"  💌 Messages delivered: {delivered_count}")
-                    print(f"  📈 Delivery rate: {delivery_rate:.1%}")
-                    print(f"  ⏱️  Mean delivery AoI: {mean_delivery_aoi:.1f}s")
-                    print(f"  🎯 Episode reward: {episode_reward:.2f}")
+                    print(f"\n Episode {self.episode_count} AoI Metrics:")
+                    print(f"Messages delivered: {delivered_count}")
+                    print(f"Delivery rate: {delivery_rate:.1%}")
+                    print(f"Mean delivery AoI: {mean_delivery_aoi:.1f}s")
+                    print(f"Episode reward: {episode_reward:.2f}")
         
         return True
 
@@ -60,7 +58,7 @@ def create_environment(config: SimulationConfig):
     
     # Check environment is compatible with SB3
     check_env(env)
-    print("✅ Environment check passed!")
+    print("Environment check passed!")
     
     # Wrap with Monitor for logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,45 +78,45 @@ def create_dqn_model(env, config: SimulationConfig):
         
         # Network architecture
         policy_kwargs=dict(
-            net_arch=[256, 256, 128],
-            activation_fn=torch.nn.ReLU,
+            net_arch=config.dqn_net_arch,
+            activation_fn=getattr(torch.nn, config.dqn_activation),
         ),
         
         # Learning parameters
-        learning_rate=1e-4,
-        gamma=0.95,
+        learning_rate=config.dqn_learning_rate,
+        gamma=config.dqn_gamma,
         
         # Experience replay
-        buffer_size=50000,
-        learning_starts=1000,
-        batch_size=64,
+        buffer_size=config.dqn_buffer_size,
+        learning_starts=config.dqn_learning_starts,
+        batch_size=config.dqn_batch_size,
         
         # Target network updates
-        target_update_interval=1000,
-        tau=1.0,
+        target_update_interval=config.dqn_target_update_interval,
+        tau=config.dqn_tau,
         
         # Exploration strategy
-        exploration_fraction=0.3,
-        exploration_initial_eps=1.0,
-        exploration_final_eps=0.05,
+        exploration_fraction=config.dqn_exploration_fraction,
+        exploration_initial_eps=config.dqn_exploration_initial_eps,
+        exploration_final_eps=config.dqn_exploration_final_eps,
         
         # Training frequency
-        train_freq=4,
-        gradient_steps=1,
+        train_freq=config.dqn_train_freq,
+        gradient_steps=config.dqn_gradient_steps,
         
         # Other parameters
-        verbose=1,
-        tensorboard_log="./logs",  # ← ADD THIS LINE
+        verbose=config.dqn_verbose,
+        tensorboard_log=config.dqn_tensorboard_log,
         device="auto",
-        seed=42,
+        seed=config.dqn_seed,
     )
     
-    print(f"🧠 Created DQN model:")
-    print(f"  📊 Observation space: {env.observation_space.shape}")
-    print(f"  🎮 Action space: {env.action_space.n} actions")
-    print(f"  🔧 Network architecture: [256, 256, 128]")
-    print(f"  📚 Buffer size: {model.buffer_size}")
-    print(f"  📈 TensorBoard log: ./logs")  # ← ADD THIS LINE
+    print(f"Created DQN model:")
+    print(f"Observation space: {env.observation_space.shape}")
+    print(f"Action space: {env.action_space.n} actions")
+    print(f"Network architecture: {config.dqn_net_arch}")
+    print(f"Buffer size: {model.buffer_size}")
+    print(f"TensorBoard log: {config.dqn_tensorboard_log}") 
     
     return model
 
@@ -152,14 +150,14 @@ def train_dqn_agent():
     config = SimulationConfig()
     
     # Print key configuration
-    print(f"📋 Training Configuration:")
-    print(f"  🌊 Area size: {config.area_size}")
-    print(f"  📡 Sensors: {config.num_sensors}")
-    print(f"  🚢 Ships: {config.num_ships}")
-    print(f"  ⏱️  Data generation interval: {config.data_generation_interval}s")
-    print(f"  📦 Message TTL: {config.message_ttl}s")
-    print(f"  🔄 Max episode steps: {config.max_episode_steps}")
-    print()
+    print(f"Training Configuration:")
+    print(f"Area size: {config.area_size}")
+    print(f"Sensors: {config.num_sensors}")
+    print(f"Ships: {config.num_ships}")
+    print(f"Network: {config.dqn_net_arch}")
+    print(f"Buffer: {config.dqn_buffer_size}")
+    print(f"Learning rate: {config.dqn_learning_rate}")
+    print(f"Timesteps: {config.dqn_total_timesteps}")
     
     # Create environment
     env, log_dir = create_environment(config)
@@ -171,35 +169,35 @@ def train_dqn_agent():
     callbacks = create_callbacks(env, log_dir)
     
     # Start training
-    print("\n🎯 Beginning Training...")
+    print("\n Beginning Training...")
     print("Monitor training progress with: tensorboard --logdir ./logs")
     
     try:
         model.learn(
-            total_timesteps=100000,      # Total training steps
+            total_timesteps=config.dqn_total_timesteps,      # Total training steps
             callback=callbacks,
-            log_interval=100,            # Print progress every 100 episodes
-            tb_log_name="dqn_aoi_training",
+            log_interval=config.dqn_log_interval,            # Print progress every 100 episodes
+            tb_log_name=config.dqn_tb_log_name,
             progress_bar=True
         )
-        print("✅ Training completed successfully!")
+        print("Training completed successfully!")
         
     except KeyboardInterrupt:
-        print("\n⚠️ Training interrupted by user")
+        print("\n Training interrupted by user")
     
     # Save final model
     final_model_path = os.path.join(log_dir, "final_model")
     model.save(final_model_path)
-    print(f"💾 Final model saved to: {final_model_path}")
+    print(f"Final model saved to: {final_model_path}")
     
     # Test the trained model
-    print("\n🧪 Testing trained model...")
-    test_trained_model(model, env, episodes=3)
+    print("\nTesting trained model...")
+    test_trained_model(model, env, config.test_episodes)
     
     env.close()
     return model, log_dir
 
-def test_trained_model(model, env, episodes=3):
+def test_trained_model(model, env, episodes):
     """Test the trained model and show performance"""
     
     print(f"\n🔬 Testing trained model for {episodes} episodes...")
@@ -212,9 +210,9 @@ def test_trained_model(model, env, episodes=3):
         obs, info = env.reset()
         episode_reward = 0
         step_count = 0
-        
-        print(f"\n📝 Episode {episode + 1}:")
-        
+
+        print(f"\nEpisode {episode + 1}:")
+
         while True:
             # Use trained policy (deterministic)
             action, _states = model.predict(obs, deterministic=True)
@@ -238,21 +236,21 @@ def test_trained_model(model, env, episodes=3):
             total_delivered.append(delivered_count)
             total_delivery_rates.append(delivery_rate)
             
-            print(f"  🎯 Steps: {step_count}, Reward: {episode_reward:.2f}")
-            print(f"  📦 Messages delivered: {delivered_count}")
-            print(f"  📈 Delivery rate: {delivery_rate:.1%}")
-            print(f"  ⏱️  Mean delivery AoI: {mean_aoi:.1f}s")
+            print(f"Steps: {step_count}, Reward: {episode_reward:.2f}")
+            print(f"Messages delivered: {delivered_count}")
+            print(f"Delivery rate: {delivery_rate:.1%}")
+            print(f"Mean delivery AoI: {mean_aoi:.1f}s")
     
     # Summary statistics
-    print(f"\n📊 Test Summary ({episodes} episodes):")
-    print(f"  🎯 Mean reward: {np.mean(total_rewards):.2f} ± {np.std(total_rewards):.2f}")
-    print(f"  📦 Mean messages delivered: {np.mean(total_delivered):.1f}")
-    print(f"  📈 Mean delivery rate: {np.mean(total_delivery_rates):.1%}")
+    print(f"\nTest Summary ({episodes} episodes):")
+    print(f"Mean reward: {np.mean(total_rewards):.2f} ± {np.std(total_rewards):.2f}")
+    print(f"Mean messages delivered: {np.mean(total_delivered):.1f}")
+    print(f"Mean delivery rate: {np.mean(total_delivery_rates):.1%}")
 
 def compare_with_random_policy(config: SimulationConfig, episodes=5):
     """Compare trained model with random policy"""
-    
-    print("\n🎲 Testing random policy for comparison...")
+
+    print("\nTesting random policy for comparison...")
     
     env = DTNDroneEnvironment(config)
     random_rewards = []
@@ -276,10 +274,10 @@ def compare_with_random_policy(config: SimulationConfig, episodes=5):
             delivered_count = info['aoi_metrics']['delivered']['count']
             random_delivered.append(delivered_count)
     
-    print(f"🎲 Random Policy Results ({episodes} episodes):")
-    print(f"  🎯 Mean reward: {np.mean(random_rewards):.2f} ± {np.std(random_rewards):.2f}")
-    print(f"  📦 Mean messages delivered: {np.mean(random_delivered):.1f}")
-    
+    print(f"Random Policy Results ({episodes} episodes):")
+    print(f"Mean reward: {np.mean(random_rewards):.2f} ± {np.std(random_rewards):.2f}")
+    print(f"Mean messages delivered: {np.mean(random_delivered):.1f}")
+
     env.close()
 
 if __name__ == "__main__":
@@ -289,6 +287,6 @@ if __name__ == "__main__":
     # Compare with random policy
     config = SimulationConfig()
     compare_with_random_policy(config, episodes=3)
-    
-    print(f"\n🎉 Training complete! Check logs at: {log_dir}")
-    print("📈 View training progress: tensorboard --logdir ./logs")
+
+    print(f"\nTraining complete! Check logs at: {log_dir}")
+    print("View training progress: tensorboard --logdir ./logs")
