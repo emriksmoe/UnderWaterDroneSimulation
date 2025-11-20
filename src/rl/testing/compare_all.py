@@ -3,12 +3,13 @@ Compare all approaches: Single Agent vs Multi-Agent vs Random Baselines
 """
 
 import numpy as np
-from stable_baselines3 import DQN
+from stable_baselines3 import DQN, PPO  # ← ADD PPO IMPORT
 from src.rl.environments.single_agent_env import DTNDroneEnvironment
 from src.rl.environments.multi_agent_env import MultiAgentDTNEnvironment
 from src.config.simulation_config import SimulationConfig
 from src.rl.testing.test_single_agent_model import find_latest_model_path
 from src.rl.testing.test_multi_agent_model import find_latest_multi_agent_model_path
+
 def test_approach(model, env, approach_name, episodes=3):
     """Test any approach and return standardized results"""
     print(f"\n🧪 Testing {approach_name} ({episodes} episodes):")
@@ -19,7 +20,7 @@ def test_approach(model, env, approach_name, episodes=3):
         obs, info = env.reset()
         episode_reward = 0
         
-        for step in range(1000):
+        for step in range(200):  # Consistent shorter episodes for fair comparison
             if model is None:  # Random policy
                 action = env.action_space.sample()
             else:  # Trained policy
@@ -28,15 +29,20 @@ def test_approach(model, env, approach_name, episodes=3):
             obs, reward, done, truncated, info = env.step(action)
             episode_reward += reward
             
+            # Debug large rewards
+            if abs(reward) > 10000:
+                print(f"⚠️ Large reward: {reward} at step {step} for {approach_name}")
+            
             if done or truncated:
+                print(f"  Episode ended at step {step}: done={done}, truncated={truncated}")
                 break
         
         # Extract metrics based on environment type
         if 'multi_agent_aoi_metrics' in info:  # Multi-agent environment
             ma_metrics = info['multi_agent_aoi_metrics']
-            delivered = ma_metrics['system']['total_delivered']
-            delivery_rate = ma_metrics['system']['delivery_rate']
-            mean_aoi = ma_metrics['system']['mean_delivery_aoi']
+            delivered = ma_metrics.get('system', {}).get('total_delivered', 0)
+            delivery_rate = ma_metrics.get('system', {}).get('delivery_rate', 0.0)
+            mean_aoi = ma_metrics.get('system', {}).get('mean_delivery_aoi', 0.0)
         elif 'aoi_metrics' in info:  # Single-agent environment
             aoi_data = info['aoi_metrics']
             delivered = aoi_data['delivered']['count']
@@ -102,11 +108,11 @@ def compare_all_approaches():
     except Exception as e:
         print(f"❌ Single agent test failed: {e}")
     
-    # 2. Test Multi-Agent Trained Model
+    # 2. Test Multi-Agent Trained Model - FIXED VERSION
     try:
         print("\n2️⃣ Loading Multi-Agent Model...")
-        multi_model_path = find_latest_multi_agent_model_path("./logs/multi_agent")
-        multi_model = DQN.load(multi_model_path)
+        multi_model_path = find_latest_multi_agent_model_path()  # ← FIXED: Remove logs_dir parameter
+        multi_model = PPO.load(multi_model_path)  # ← FIXED: Use PPO instead of DQN
         multi_env = MultiAgentDTNEnvironment(config)
         
         multi_results = test_approach(multi_model, multi_env, "Multi-Agent Trained", episodes=5)
@@ -115,6 +121,8 @@ def compare_all_approaches():
         
     except Exception as e:
         print(f"❌ Multi-agent test failed: {e}")
+        import traceback
+        traceback.print_exc()  # ← ADD: Better error debugging
     
     # 3. Test Single Agent Random Baseline
     try:
@@ -180,12 +188,49 @@ def compare_all_approaches():
                           abs(single_trained['mean_reward']) * 100)
             print(f"   Multi-Agent vs Single Agent: {improvement:.1f}% improvement")
         
-        # Best approach
-        best_approach = max(all_results, key=lambda x: x['mean_reward'])
-        print(f"\n🏆 BEST APPROACH: {best_approach['name']}")
-        print(f"   Best reward: {best_approach['mean_reward']:.0f}")
-        print(f"   Best delivery rate: {best_approach['mean_delivery_rate']:.1%}")
-        print(f"   Best mean AoI: {best_approach['mean_aoi']:.1f}s")
+        # Comprehensive analysis
+        print(f"\n📈 COMPREHENSIVE ANALYSIS:")
+        
+        # Best by different metrics
+        best_reward = max(all_results, key=lambda x: x['mean_reward'])
+        best_delivery_rate = max(all_results, key=lambda x: x['mean_delivery_rate'])
+        best_delivered = max(all_results, key=lambda x: x['mean_delivered'])
+        
+        print(f"   🏆 Best Reward: {best_reward['name']} ({best_reward['mean_reward']:.0f})")
+        print(f"   📦 Best Delivery Rate: {best_delivery_rate['name']} ({best_delivery_rate['mean_delivery_rate']:.1%})")
+        print(f"   📊 Most Messages Delivered: {best_delivered['name']} ({best_delivered['mean_delivered']:.1f})")
+        
+        # Performance insights
+        print(f"\n💡 PERFORMANCE INSIGHTS:")
+        
+        trained_approaches = [r for r in all_results if 'Trained' in r['name']]
+        random_approaches = [r for r in all_results if 'Random' in r['name']]
+        
+        if trained_approaches and random_approaches:
+            avg_trained_reward = np.mean([r['mean_reward'] for r in trained_approaches])
+            avg_random_reward = np.mean([r['mean_reward'] for r in random_approaches])
+            avg_trained_delivery = np.mean([r['mean_delivered'] for r in trained_approaches])
+            avg_random_delivery = np.mean([r['mean_delivered'] for r in random_approaches])
+            
+            if avg_trained_reward > avg_random_reward:
+                print(f"   ✅ Training is working: Trained models outperform random by {avg_trained_reward - avg_random_reward:.0f} reward")
+            else:
+                print(f"   ❌ Training issues: Random models outperform trained by {avg_random_reward - avg_trained_reward:.0f} reward")
+                
+            if avg_trained_delivery > avg_random_delivery:
+                print(f"   ✅ Learning meaningful behavior: {avg_trained_delivery - avg_random_delivery:.1f} more deliveries")
+            else:
+                print(f"   ❌ Not learning effectively: {avg_random_delivery - avg_trained_delivery:.1f} fewer deliveries")
+        
+        # Recommendations
+        print(f"\n🎯 RECOMMENDATIONS:")
+        if any('❌' in line for line in [f"Training issues" if trained_approaches and random_approaches and np.mean([r['mean_reward'] for r in trained_approaches]) <= np.mean([r['mean_reward'] for r in random_approaches]) else ""]):
+            print(f"   🔧 Consider adjusting reward function or training hyperparameters")
+            print(f"   🔧 Check for negative AoI values or time synchronization issues")
+            print(f"   🔧 Verify environment is providing meaningful learning signals")
+        else:
+            print(f"   🚀 Training appears successful! Consider longer training for further improvement")
+            print(f"   📊 Analyze TensorBoard logs for training stability and convergence")
     
     print(f"\n🎉 Comprehensive comparison complete!")
 

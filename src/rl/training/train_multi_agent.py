@@ -81,9 +81,9 @@ def create_multi_agent_environment(config: SimulationConfig, n_envs: int = 1):
     check_env(test_env)
     print("Multi-agent environment check passed!")
     
-    # Create logging directory
+    # Create organized logging directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = f"./logs/multi_agent_training_{timestamp}/"
+    log_dir = f"./logs/multi_agent/training_{timestamp}/"
     os.makedirs(log_dir, exist_ok=True)
     
     # For multi-agent, we typically use single environment due to complexity

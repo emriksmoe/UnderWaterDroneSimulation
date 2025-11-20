@@ -9,25 +9,64 @@ from src.config.simulation_config import SimulationConfig
 import os
 import glob
 
-def find_latest_multi_agent_model_path(logs_dir="./logs/multi_agent", model_name="best_model.zip"):
-    """Find the most recent multi-agent trained model automatically"""
+def find_latest_multi_agent_model_path(model_name="best_model.zip"):
+    """Find the most recent multi-agent trained model automatically - improved version"""
     
-    # Find all multi-agent training folders
-    training_folders = glob.glob(os.path.join(logs_dir, "training_*"))
+    # List of possible log directory patterns to check
+    possible_patterns = [
+        "./logs/multi_agent/training_*",        # New organized structure
+        "./logs/multi_agent_training_*",        # Old structure you might have
+        "./logs/training_*",                    # Generic structure
+    ]
     
-    if not training_folders:
-        raise FileNotFoundError(f"No multi-agent training folders found in {logs_dir}")
+    all_training_folders = []
     
-    # Sort by folder name (timestamp) - most recent first
-    training_folders.sort(reverse=True)
+    # Search all possible patterns
+    for pattern in possible_patterns:
+        folders = glob.glob(pattern)
+        if folders:
+            print(f"🔍 Found {len(folders)} folders matching pattern: {pattern}")
+            all_training_folders.extend(folders)
+            print(f"🔍 Found {len(folders)} folders matching pattern: {pattern}")
+            all_training_folders.extend(folders)
     
-    # Look for the model in the latest folder
-    for folder in training_folders:
-        model_path = os.path.join(folder, "best_model", model_name)
-        if os.path.exists(model_path):
-            return model_path
+    # Remove duplicates and sort by timestamp (most recent first)
+    all_training_folders = list(set(all_training_folders))
+    all_training_folders.sort(reverse=True)
     
-    raise FileNotFoundError(f"No {model_name} found in any multi-agent training folder")
+    if not all_training_folders:
+        raise FileNotFoundError("No training folders found in any of these locations:\n" + 
+                              "\n".join(f"  - {pattern}" for pattern in possible_patterns))
+    
+    print(f"📁 Found {len(all_training_folders)} total training folders")
+    
+    # Look for the model file in each folder (newest first)
+    for folder in all_training_folders:
+        # Try different possible model locations
+        possible_model_paths = [
+            os.path.join(folder, "best_model", model_name),           # Standard location
+            os.path.join(folder, model_name),                        # Direct in folder
+            os.path.join(folder, "final_multi_agent_ppo_model.zip"), # Final model name
+        ]
+        
+        for model_path in possible_model_paths:
+            if os.path.exists(model_path):
+                print(f"✅ Found model at: {model_path}")
+                return model_path
+    
+    # If we get here, no model was found
+    print("\n❌ Model search details:")
+    for folder in all_training_folders[:3]:  # Show first 3 folders
+        print(f"  Checked folder: {folder}")
+        for model_path in [os.path.join(folder, "best_model", model_name), 
+                          os.path.join(folder, model_name)]:
+            exists = "✅" if os.path.exists(model_path) else "❌"
+            exists = "✅" if os.path.exists(model_path) else "❌"
+            print(f"    {exists} {model_path}")
+    
+    raise FileNotFoundError(f"No {model_name} found in any training folder.\n" +
+                          "Make sure you've completed multi-agent training first:\n" +
+                          "  python -m src.rl.training.train_multi_agent")
 
 def test_multi_agent_single_episode(model, env):
     """Test the multi-agent model for one episode and return detailed results"""

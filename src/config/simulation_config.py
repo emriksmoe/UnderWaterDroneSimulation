@@ -35,12 +35,12 @@ class SimulationConfig:
     ship_comm_range: float = 100.0       # 100m (surface has more power)
 
     #Sensor parameters
-    data_generation_interval: float = 300.0  # Interval in seconds at which sensors generate data (5 minutes)
-    sensor_buffer_capacity: int = 100  # Maximum number of messages a sensor can store
+    data_generation_interval: float = 120.0  # Interval in seconds at which sensors generate data (5 minutes)
+    sensor_buffer_capacity: int = 10  # Maximum number of messages a sensor can store
 
     #Drone hardware parameters
     drone_speed: float = 2.0  # Speed of drones in m/s
-    drone_buffer_capacity: int = 1000  # Maximum number of messages a drone can store
+    drone_buffer_capacity: int = 30  # Maximum number of messages a drone can store
     communication_wait_time: float = 10.0  # Time in seconds a drone waits to communicate when in range
     drone_wait_no_action_time: float = 3.0  # Time in seconds a drone waits when no action is possible
     encounter_communication_time: float = 5.0  # Time in seconds allocated for communication during encounters
@@ -55,7 +55,7 @@ class SimulationConfig:
     #DTN Protocol parameters
 
     #DTN Message parameters
-    message_ttl: float = 86400.0  # Time-to-live for messages (1 day)
+    message_ttl: float = 500  # Time-to-live for messages (1 day)
     message_size: int = 100  # Size of each message in bytes
     ttl_urgency_factor: float = 0.8  # Factor to adjust urgency based on TTL remaining
 
@@ -80,32 +80,42 @@ class SimulationConfig:
     max_episode_steps: int = 1000
 
 
-    # RL reward parameters  
-    reward_collection_base: float = 5.0              # Base reward for any collection
-    reward_collection_urgency_multiplier: float = 15.0  # Multiplier for urgency (age_ratio)
-    
-    # Delivery rewards - scale with freshness (inverse of AoI)
-    reward_delivery_base: float = 10.0               # Base reward for any delivery
-    reward_delivery_freshness_multiplier: float = 25.0  # Multiplier for freshness (1 - age_ratio)
-    
-    # Time and carrying penalties
-    penalty_time_per_second: float = -0.1             # Penalty per second of travel
-    penalty_carrying_per_age_unit: float = -0.01      # Penalty per second of message age carried
-    
-    # Episode-end progressive penalties
-    penalty_undelivered_base: float = -10.0          # Base penalty for any undelivered message
-    penalty_undelivered_age_multiplier: float = -0.05 # Penalty multiplier per second of age
-    penalty_uncollected_multiplier: float = 2.0      # Extra multiplier for never-collected messages
-    
-    # Action penalties
-    penalty_empty_sensor: float = -2.0
-    penalty_ship_no_messages: float = -1.0
-    penalty_explore: float = -0.5
-    penalty_buffer_overflow: float = -10.0
-  
+    # RL REWARD PARAMETERS - EXPONENTIAL CAMPING PUNISHMENT
+    # ========================================================
 
-    # RL environment parameters   # Number of discrete actions
+    # Collection rewards - HUGE POSITIVE
+    reward_collection_base: float = 1000.0  # Was 500 - DOUBLED
+    reward_collection_urgency_multiplier: float = 2000.0  # Was 1000 - DOUBLED
 
+    # Delivery rewards - MASSIVE POSITIVE
+    reward_delivery_base: float = 10000.0  # Was 5000 - DOUBLED
+    reward_delivery_freshness_multiplier: float = 20000.0  # Was 10000 - DOUBLED
+
+    # Time and carrying penalties - MINIMAL
+    penalty_time_per_second: float = -0.001  # Was -0.01 - REDUCED 10x
+    penalty_carrying_per_age_unit: float = -0.01  # Was -0.1 - REDUCED 10x
+
+    # Episode-end penalties - MODERATE (not overwhelming)
+    penalty_undelivered_base: float = -500.0  # Was -5000 - REDUCED 10x
+    penalty_undelivered_age_multiplier: float = -10.0  # Was -100 - REDUCED 10x
+    penalty_uncollected_multiplier: float = 5.0  # Was 20 - REDUCED 4x
+
+    # Action penalties - LIGHT (encourage exploration)
+    penalty_empty_sensor: float = -10.0  # Was -50 - REDUCED
+    penalty_ship_no_messages: float = -100.0  # Was -500 - REDUCED
+    penalty_explore: float = -1.0  # Was -10 - REDUCED
+
+    # Idle penalties - EXPONENTIALLY CATASTROPHIC (THIS IS KEY!)
+    penalty_idle_at_ship: float = -10000.0  # Was -2000 - NOW 5x WORSE
+    penalty_idle_at_sensor: float = -2000.0  # Was -500 - NOW 4x WORSE
+
+    # Buffer penalties - HEAVY
+    penalty_buffer_overflow: float = -10000.0  # Keep
+    penalty_buffer_near_full: float = -500.0  # Keep
+
+    # TTL expiration - CATASTROPHIC
+    penalty_message_expired: float = -5000.0  # Keep
+    penalty_message_expired_at_sensor: float = -10000.0  # Keep
 
 
 
