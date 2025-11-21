@@ -10,9 +10,11 @@ from stable_baselines3 import DQN
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseCallback
 from stable_baselines3.common.monitor import Monitor
+from pathlib import Path
 
 from src.rl.environments.single_agent_env import DTNDroneEnvironment
 from src.config.simulation_config import SimulationConfig
+from src.utils.config_logger import save_training_config
 
 
 class AoILoggingCallback(BaseCallback):
@@ -109,22 +111,68 @@ class AoILoggingCallback(BaseCallback):
         print(f"{'='*60}\n")
 
 
-def create_environment(config: SimulationConfig):
+def get_model_name():
+    """
+    Prompt user for model name or generate timestamped name.
+    Returns clean folder-safe name.
+    """
+    print("\n" + "="*60)
+    print("📝 MODEL NAMING")
+    print("="*60)
+    print("\nEnter a name for this training run (or press Enter for auto-name):")
+    print("Examples: 'baseline_v1', 'high_penalties', 'optimized_final'")
+    print("(Use letters, numbers, underscores, and hyphens only)")
+    
+    user_input = input("\nModel name: ").strip()
+    
+    if user_input:
+        # Clean the name (remove invalid characters)
+        clean_name = "".join(c for c in user_input if c.isalnum() or c in "_-")
+        
+        # Add timestamp suffix for uniqueness
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = f"{clean_name}_{timestamp}"
+        
+        print(f"\n✅ Model will be saved as: {model_name}")
+    else:
+        # Auto-generate name with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = f"training_{timestamp}"
+        print(f"\n✅ Auto-generated name: {model_name}")
+    
+    return model_name
+
+
+def save_model_metadata(log_dir: str, model_name: str, config: SimulationConfig):
+    """Save metadata about the trained model"""
+    import json
+    
+    metadata = {
+        'model_name': model_name,
+        'training_completed': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'total_timesteps': config.dqn_total_timesteps,
+        'log_directory': log_dir
+    }
+    
+    metadata_path = Path(log_dir) / "metadata.json"
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"📋 Model metadata saved to: {metadata_path}")
+
+
+def create_environment(config: SimulationConfig, log_dir: str):
     """Create and wrap the environment for training"""
     env = DTNDroneEnvironment(config)
     
     # Check environment is compatible with SB3
     check_env(env)
-    print("Environment check passed!")
+    print("✅ Environment check passed!")
     
     # Wrap with Monitor for logging
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = f"./logs/single_agent/training_{timestamp}/"
-    os.makedirs(log_dir, exist_ok=True)
-    
     env = Monitor(env, log_dir)
     
-    return env, log_dir
+    return env
 
 
 def create_dqn_model(env, config: SimulationConfig):
@@ -169,12 +217,12 @@ def create_dqn_model(env, config: SimulationConfig):
         seed=config.dqn_seed,
     )
     
-    print(f"Created DQN model:")
-    print(f"Observation space: {env.observation_space.shape}")
-    print(f"Action space: {env.action_space.n} actions")
-    print(f"Network architecture: {config.dqn_net_arch}")
-    print(f"Buffer size: {model.buffer_size}")
-    print(f"Learning rate: {config.dqn_learning_rate}")
+    print(f"\n✅ Created DQN model:")
+    print(f"   Observation space: {env.observation_space.shape}")
+    print(f"   Action space: {env.action_space.n} actions")
+    print(f"   Network architecture: {config.dqn_net_arch}")
+    print(f"   Buffer size: {model.buffer_size:,}")
+    print(f"   Learning rate: {config.dqn_learning_rate}")
     
     return model
 
@@ -187,42 +235,54 @@ def create_callbacks(env, log_dir: str):
         env,
         best_model_save_path=os.path.join(log_dir, "best_model"),
         log_path=os.path.join(log_dir, "eval"),
-        eval_freq=2000,              # Evaluate every 2000 steps
-        deterministic=True,           # Use deterministic policy for evaluation
+        eval_freq=2000,
+        deterministic=True,
         render=False,
-        n_eval_episodes=5,           # Number of episodes for evaluation
+        n_eval_episodes=5,
         verbose=1
     )
     
     # Custom AoI logging callback
     aoi_callback = AoILoggingCallback(log_freq=200, verbose=0)
     
-    # Return both callbacks
     return CallbackList([eval_callback, aoi_callback])
 
 
 def train_dqn_agent():
     """Main training function"""
     
-    print("Starting DQN Training for DTN Drone AoI Optimization")
-    print("=" * 60)
+    print("\n" + "="*60)
+    print("🚁 DQN Training - DTN Drone AoI Optimization")
+    print("="*60)
+
+    # Get model name from user
+    model_name = get_model_name()
+    
+    # Create named log directory
+    log_dir = f"./logs/single_agent/{model_name}"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    print(f"\n📂 Log directory: {log_dir}")
     
     # Create configuration
     config = SimulationConfig()
     
+    # Save configuration BEFORE training
+    save_training_config(config, log_dir, model_name)
+    
     # Print key configuration
-    print(f"Training Configuration:")
-    print(f"Area size: {config.area_size}")
-    print(f"Sensors: {config.num_sensors}")
-    print(f"Ships: {config.num_ships}")
-    print(f"Network: {config.dqn_net_arch}")
-    print(f"Buffer: {config.dqn_buffer_size}")
-    print(f"Learning rate: {config.dqn_learning_rate}")
-    print(f"Timesteps: {config.dqn_total_timesteps}")
-    print("=" * 60)
+    print(f"\n⚙️  Training Configuration:")
+    print(f"   Area size: {config.area_size}")
+    print(f"   Sensors: {config.num_sensors}")
+    print(f"   Ships: {config.num_ships}")
+    print(f"   Network: {config.dqn_net_arch}")
+    print(f"   Buffer: {config.dqn_buffer_size:,}")
+    print(f"   Learning rate: {config.dqn_learning_rate}")
+    print(f"   Total timesteps: {config.dqn_total_timesteps:,}")
+    print("="*60)
     
     # Create environment
-    env, log_dir = create_environment(config)
+    env = create_environment(config, log_dir)
     
     # Create DQN model
     model = create_dqn_model(env, config)
@@ -232,8 +292,7 @@ def train_dqn_agent():
     
     # Start training
     print("\n🚀 Beginning Training...")
-    print("Monitor training progress with: tensorboard --logdir ./logs")
-    print(f"Logging to {log_dir}")
+    print("Monitor progress: tensorboard --logdir ./logs")
     
     try:
         model.learn(
@@ -249,22 +308,37 @@ def train_dqn_agent():
         print("\n⚠️ Training interrupted by user")
     
     # Save final model
-    final_model_path = os.path.join(log_dir, "final_model")
+    final_model_path = f"{log_dir}/final_model.zip"
     model.save(final_model_path)
-    print(f"💾 Final model saved to: {final_model_path}")
+    print(f"\n💾 Final model saved: {final_model_path}")
+    
+    # Save metadata
+    save_model_metadata(log_dir, model_name, config)
     
     # Test the trained model
     print("\n🧪 Testing trained model...")
     test_trained_model(model, env, config.test_episodes)
     
     env.close()
+    
+    print(f"\n{'='*60}")
+    print("🎉 Training Complete!")
+    print(f"{'='*60}")
+    print(f"📁 Model directory: {log_dir}")
+    print(f"📊 TensorBoard: tensorboard --logdir ./logs")
+    print(f"💾 Best model: {log_dir}/best_model/best_model.zip")
+    print(f"📝 Config saved: {log_dir}/config.json")
+    print(f"\n🔬 Test your model:")
+    print(f"   python -m src.rl.testing.test_single_agent_model")
+    print(f"{'='*60}\n")
+    
     return model, log_dir
 
 
 def test_trained_model(model, env, episodes):
     """Test the trained model and show performance"""
     
-    print(f"\nTesting trained model for {episodes} episodes...")
+    print(f"\nTesting for {episodes} episodes...")
     
     total_rewards = []
     total_delivered = []
@@ -276,12 +350,7 @@ def test_trained_model(model, env, episodes):
         episode_reward = 0
         step_count = 0
 
-        print(f"\n{'='*40}")
-        print(f"Test Episode {episode + 1}/{episodes}")
-        print(f"{'='*40}")
-
         while True:
-            # Use trained policy (deterministic)
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
             
@@ -293,7 +362,6 @@ def test_trained_model(model, env, episodes):
         
         total_rewards.append(episode_reward)
         
-        # Extract AoI metrics
         if 'aoi_metrics' in info:
             aoi_data = info['aoi_metrics']
             delivered_count = aoi_data['delivered']['count']
@@ -303,82 +371,13 @@ def test_trained_model(model, env, episodes):
             total_delivered.append(delivered_count)
             total_delivery_rates.append(delivery_rate)
             total_mean_aois.append(mean_aoi)
-            
-            print(f"Steps: {step_count}")
-            print(f"Episode Reward: {episode_reward:.2f}")
-            print(f"Messages Delivered: {delivered_count}")
-            print(f"Delivery Rate: {delivery_rate:.1%}")
-            print(f"Mean Delivery AoI: {mean_aoi:.1f}s")
     
-    # Summary statistics
-    print(f"\n{'='*60}")
-    print(f"Test Summary ({episodes} episodes):")
-    print(f"{'='*60}")
-    print(f"Mean Reward: {np.mean(total_rewards):.2f} ± {np.std(total_rewards):.2f}")
-    print(f"Mean Messages Delivered: {np.mean(total_delivered):.1f} ± {np.std(total_delivered):.1f}")
-    print(f"Mean Delivery Rate: {np.mean(total_delivery_rates):.1%}")
-    print(f"Mean Delivery AoI: {np.mean(total_mean_aois):.1f}s ± {np.std(total_mean_aois):.1f}s")
-    print(f"{'='*60}\n")
-
-
-def compare_with_random_policy(config: SimulationConfig, episodes=5):
-    """Compare trained model with random policy"""
-
-    print("\n" + "="*60)
-    print("Testing Random Policy for Comparison")
-    print("="*60)
-    
-    env = DTNDroneEnvironment(config)
-    random_rewards = []
-    random_delivered = []
-    random_delivery_rates = []
-    random_mean_aois = []
-    
-    for episode in range(episodes):
-        obs, info = env.reset()
-        episode_reward = 0
-        
-        while True:
-            action = env.action_space.sample()  # Random action
-            obs, reward, done, truncated, info = env.step(action)
-            episode_reward += reward
-            
-            if done or truncated:
-                break
-        
-        random_rewards.append(episode_reward)
-        
-        if 'aoi_metrics' in info:
-            delivered_count = info['aoi_metrics']['delivered']['count']
-            delivery_rate = info['aoi_metrics']['global']['delivery_rate']
-            mean_aoi = info['aoi_metrics']['delivered']['mean_aoi']
-            
-            random_delivered.append(delivered_count)
-            random_delivery_rates.append(delivery_rate)
-            random_mean_aois.append(mean_aoi)
-    
-    print(f"\nRandom Policy Results ({episodes} episodes):")
-    print(f"Mean Reward: {np.mean(random_rewards):.2f} ± {np.std(random_rewards):.2f}")
-    print(f"Mean Messages Delivered: {np.mean(random_delivered):.1f}")
-    print(f"Mean Delivery Rate: {np.mean(random_delivery_rates):.1%}")
-    print(f"Mean Delivery AoI: {np.mean(random_mean_aois):.1f}s")
-    print("="*60)
-
-    env.close()
+    print(f"\n📊 Test Summary ({episodes} episodes):")
+    print(f"   Mean Reward: {np.mean(total_rewards):.2f} ± {np.std(total_rewards):.2f}")
+    print(f"   Messages Delivered: {np.mean(total_delivered):.1f} ± {np.std(total_delivered):.1f}")
+    print(f"   Delivery Rate: {np.mean(total_delivery_rates):.1%}")
+    print(f"   Mean AoI: {np.mean(total_mean_aois):.1f}s ± {np.std(total_mean_aois):.1f}s")
 
 
 if __name__ == "__main__":
-    # Train the DQN agent
-    model, log_dir = train_dqn_agent()
-    
-    # Compare with random policy
-    config = SimulationConfig()
-    compare_with_random_policy(config, episodes=3)
-
-    print(f"\n{'='*60}")
-    print("Training Complete!")
-    print(f"{'='*60}")
-    print(f"📁 Logs saved to: {log_dir}")
-    print(f"📊 View training progress: tensorboard --logdir ./logs")
-    print(f"💾 Best model saved at: {log_dir}/best_model/best_model.zip")
-    print(f"{'='*60}\n")
+    train_dqn_agent()

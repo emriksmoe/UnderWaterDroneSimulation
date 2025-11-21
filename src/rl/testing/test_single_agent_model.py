@@ -10,19 +10,35 @@ import os
 import glob
 from pathlib import Path
 from visualization.rl_plots import create_test_visualization
-
+from src.utils.config_logger import (
+    save_test_config, 
+    print_config_summary, 
+    save_test_results,
+    get_model_name_from_path
+)
 
 def find_latest_model_path(logs_dir="./logs/single_agent"):
     """Find the most recent trained model automatically"""
     
-    # Find all training folders
-    training_folders = glob.glob(os.path.join(logs_dir, "training_*"))
+    logs_path = Path(logs_dir)
     
-    if not training_folders:
-        raise FileNotFoundError(f"No training folders found in {logs_dir}")
+    if not logs_path.exists():
+        raise FileNotFoundError(
+            f"No models directory found at {logs_dir}\n"
+            f"Run training first: python -m src.rl.training.train_single_agent"
+        )
     
-    # Sort by folder name (which includes timestamp) - most recent first
-    training_folders.sort(reverse=True)
+    # Find all subdirectories (model folders)
+    model_folders = [d for d in logs_path.iterdir() if d.is_dir()]
+    
+    if not model_folders:
+        raise FileNotFoundError(
+            f"No model folders found in {logs_dir}\n"
+            f"Run training first: python -m src.rl.training.train_single_agent"
+        )
+    
+    # Sort by modification time (most recent first)
+    model_folders.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     
     # Look for models in priority order
     model_search_paths = [
@@ -31,28 +47,31 @@ def find_latest_model_path(logs_dir="./logs/single_agent"):
         "final_model.zip",             # Final model after training
     ]
     
-    # Try each folder
-    for folder in training_folders:
-        print(f"🔍 Checking folder: {folder}")
+    # Try each folder (most recent first)
+    for folder in model_folders:
+        print(f"🔍 Checking folder: {folder.name}")
         
         # Try each possible model path
         for model_file in model_search_paths:
-            model_path = os.path.join(folder, model_file)
-            if os.path.exists(model_path):
+            model_path = folder / model_file
+            if model_path.exists():
                 print(f"✅ Found model: {model_path}")
-                return model_path
+                return str(model_path)
         
-        # List what's actually in the folder for debugging
+        # List what's in the folder for debugging
         try:
-            contents = os.listdir(folder)
+            contents = [f.name for f in folder.iterdir()]
             print(f"   Contents: {contents}")
-        except:
-            pass
+        except Exception as e:
+            print(f"   Could not list contents: {e}")
     
+    # If we get here, no model was found
+    available_folders = [f.name for f in model_folders]
     raise FileNotFoundError(
-        f"No model found in any training folder.\n"
+        f"No model found in any folder.\n"
         f"Searched in: {logs_dir}\n"
-        f"Training folders found: {len(training_folders)}\n"
+        f"Available folders: {available_folders}\n"
+        f"Expected files: {model_search_paths}\n\n"
         f"Run training first: python -m src.rl.training.train_single_agent"
     )
 
@@ -542,6 +561,12 @@ def main():
     # Setup environment
     config = SimulationConfig()
     env = DTNDroneEnvironment(config)
+
+    model_name = get_model_name_from_path(model_path)
+    print(f"📦 Testing model: {model_name}")
+
+    print_config_summary(config) #logs the config summary
+    config_file = save_test_config(config, model_path)
     
     print(f"\n📋 Test Configuration:")
     print(f"   Area size: {config.area_size}")
@@ -620,6 +645,13 @@ def main():
                 'sensor_aoi_avg': np.mean([r['system_aoi']['mean_sensor_aoi'] for r in random_results if 'system_aoi' in r]),
                 'drone_aoi_avg': np.mean([r['system_aoi']['mean_drone_aoi'] for r in random_results if 'system_aoi' in r])
             }
+
+            save_test_results(
+                trained_stats=trained_stats,
+                random_stats=random_stats,
+                config_file=str(config_file),
+                model_path=model_path
+            )
             
             # Print text comparison (your existing code)
             print(f"\n{'='*60}")
@@ -702,7 +734,7 @@ def main():
             print("="*60)
             
             try:
-                create_test_visualization(trained_stats, random_stats)
+                create_test_visualization(trained_stats, random_stats, model_path=model_path)
             except Exception as e:
                 print(f"⚠️ Visualization failed: {e}")
                 import traceback

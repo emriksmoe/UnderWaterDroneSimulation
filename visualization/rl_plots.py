@@ -11,6 +11,27 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['font.size'] = 10
 
+
+def get_model_visualization_dir(model_path: str) -> Path:
+    """
+    Get visualization directory for a specific model.
+    This is a standalone function (not a class method).
+    
+    Args:
+        model_path: Path to model file (e.g., logs/single_agent/baseline_v1/best_model/best_model.zip)
+        
+    Returns:
+        Path to model's visualization directory
+    """
+    # Model path: logs/single_agent/baseline_v1_20251121/best_model/best_model.zip
+    # Want: logs/single_agent/baseline_v1_20251121/visualizations/
+    model_dir = Path(model_path).parent.parent
+    vis_dir = model_dir / "visualizations"
+    vis_dir.mkdir(parents=True, exist_ok=True)
+    
+    return vis_dir
+
+
 class RLResultsVisualizer:
     """Visualize RL training and testing results"""
     
@@ -116,11 +137,12 @@ class RLResultsVisualizer:
                    f'{height:.0f}s',
                    ha='center', va='bottom', fontweight='bold')
         
-        delivered_aoi_reduction = ((random_stats['mean_delivered_aoi'] - trained_stats['mean_delivered_aoi']) / 
-                                  random_stats['mean_delivered_aoi'] * 100)
-        ax.text(0.5, 0.95, f'Reduction: {delivered_aoi_reduction:.1f}%', 
-               transform=ax.transAxes, ha='center', va='top',
-               bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
+        if random_stats['mean_delivered_aoi'] > 0:
+            delivered_aoi_reduction = ((random_stats['mean_delivered_aoi'] - trained_stats['mean_delivered_aoi']) / 
+                                      random_stats['mean_delivered_aoi'] * 100)
+            ax.text(0.5, 0.95, f'Reduction: {delivered_aoi_reduction:.1f}%', 
+                   transform=ax.transAxes, ha='center', va='top',
+                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
         
         # 6. Undelivered Messages
         ax = axes[1, 2]
@@ -139,9 +161,12 @@ class RLResultsVisualizer:
                    ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
-        plt.savefig(self.save_dir / 'comparison_overview.png', dpi=300, bbox_inches='tight')
-        print(f"✅ Saved comparison overview to {self.save_dir / 'comparison_overview.png'}")
-        plt.show()
+        
+        # Save to self.save_dir (will be overridden by create_test_visualization)
+        filepath = self.save_dir / 'test_comparison.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        print(f"✅ Saved comparison to {filepath}")
+        plt.close()
     
     def plot_aoi_breakdown(self, trained_stats: Dict, random_stats: Dict):
         """Plot detailed AoI breakdown"""
@@ -189,23 +214,42 @@ class RLResultsVisualizer:
                        ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
-        plt.savefig(self.save_dir / 'aoi_breakdown.png', dpi=300, bbox_inches='tight')
-        print(f"✅ Saved AoI breakdown to {self.save_dir / 'aoi_breakdown.png'}")
-        plt.show()
+        
+        # Save to self.save_dir
+        filepath = self.save_dir / 'test_metrics.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        print(f"✅ Saved AoI breakdown to {filepath}")
+        plt.close()
 
 
-def create_test_visualization(trained_stats: Dict, random_stats: Dict):
-    """Create all visualizations from test results"""
+def create_test_visualization(trained_stats: Dict, random_stats: Dict, model_path: str = None):
+    """
+    Create all visualizations from test results.
     
-    visualizer = RLResultsVisualizer(save_dir="results/plots/rl")
+    Args:
+        trained_stats: Statistics from trained agent
+        random_stats: Statistics from random policy
+        model_path: Path to model file. If provided, saves to model's visualization directory.
+                   If None, saves to default results/plots/rl directory.
+    """
     
-    # Main comparison
+    # Determine save directory
+    if model_path:
+        save_dir = get_model_visualization_dir(model_path)
+        print(f"\n📊 Saving visualizations to model directory: {save_dir}")
+    else:
+        save_dir = Path("results/plots/rl")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n📊 Saving visualizations to default directory: {save_dir}")
+    
+    # Create visualizer with appropriate save directory
+    visualizer = RLResultsVisualizer(save_dir=str(save_dir))
+    
+    # Generate all plots
     visualizer.plot_comparison_metrics(trained_stats, random_stats)
-    
-    # AoI breakdown
     visualizer.plot_aoi_breakdown(trained_stats, random_stats)
     
     print("\n" + "="*60)
     print("✅ All visualizations created successfully!")
-    print(f"📁 Saved to: {visualizer.save_dir}")
+    print(f"📁 Saved to: {save_dir}")
     print("="*60)
