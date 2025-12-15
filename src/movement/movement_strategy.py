@@ -27,7 +27,7 @@ class MovementStrategy(ABC):
     """
 
     @abstractmethod 
-    def get_next_target(self, drone: 'Drone', sensors: List['Sensor'], ships: List['Ship'], other_drones: List['Drone'], config: SimulationConfig, current_time: float) -> TargetResult:
+    def get_next_target(self, drone: 'Drone', sensors: List['Sensor'], ships: List['Ship'], config: SimulationConfig, current_time: float) -> TargetResult:
         """Select the next target position for the drone""" 
         pass
 

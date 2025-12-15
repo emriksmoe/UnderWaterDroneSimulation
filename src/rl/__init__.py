@@ -1,9 +1,13 @@
+"""
+Reinforcement Learning Module
+==============================
+RL components for DTN drone optimization.
+"""
 
-# Make key classes easily importable
-from .state_manager import RLStateManager
-from .environments.single_agent_env import DTNDroneEnvironment
+from .state_builder import build_observation 
+from .environments.rl_env import DroneAoIEnv
 
 __all__ = [
-    'RLStateManager',
-    'DTNDroneEnvironment', 
+    'build_observation',
+    'DroneAoIEnv',
 ]

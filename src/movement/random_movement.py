@@ -11,54 +11,44 @@ if TYPE_CHECKING:
     from ..agents.ship import Ship
 
 class RandomMovementStrategy(MovementStrategy):
+    """
+    Pure random movement - no intelligence.
+    Picks uniformly random target from all sensors and ships.
+    Provides baseline for comparison with intelligent strategies.
+    """
 
-    #strategy that selects a random target position within defined bounds
-
-    def get_next_target(self, drone: 'Drone', sensors: List['Sensor'], ships: List['Ship'], other_drones: List['Drone'],
+    def get_next_target(self, drone: 'Drone', sensors: List['Sensor'], ships: List['Ship'],
                         config: SimulationConfig, current_time: float) -> TargetResult:
-
-        buffer_usage = len(drone.messages) / config.drone_buffer_capacity
-
-        if buffer_usage >= config.random_strat_buffer_threshold:
-            if ships:   
-                closest_ship = self.find_closest_ship(drone, ships)
-                return TargetResult(
-                    position=closest_ship.position,
-                    entity_type="ship",
-                    entity=closest_ship
-                )
-
-        if drone.last_visited == "ship" and buffer_usage < config.random_strat_buffer_threshold:
-            if sensors:
-                sensor = random.choice(sensors)
-                return TargetResult(
-                    position=sensor.position,
-                    entity_type="sensor",
-                    entity=sensor
-                )
-
-        if len(drone.messages) > 0 and random.random() <= config.visit_ship_probability:
-            if ships:
-                closest_ship = self.find_closest_ship(drone, ships)
-                return TargetResult(
-                    position=closest_ship.position,
-                    entity_type="ship",
-                    entity=closest_ship
-                )
-            
-        if sensors:
-            sensor = random.choice(sensors)
+        
+        if drone.is_buffer_full(config):
             return TargetResult(
-                position=sensor.position,
-                entity_type="sensor",
-                entity=sensor
+                position=ships[0].position,
+                entity_type="ship",
+                entity=ships[0]
             )
 
+        # Pure uniform random over all entities (sensors + ships)
+        all_targets = []
+        for s in sensors:
+            all_targets.append(("sensor", s))
+        for sh in ships:
+            all_targets.append(("ship", sh))
+
+        if all_targets:
+            entity_type, entity = random.choice(all_targets)
+            return TargetResult(
+                position=entity.position,
+                entity_type=entity_type,
+                entity=entity
+            )
+
+        # Fallback if no targets exist
         return TargetResult(
             position=drone.position,
             entity_type="none",
             entity=None
         )
+
 
     def get_strategy_name(self) -> str:
         return "Random Movement Strategy"

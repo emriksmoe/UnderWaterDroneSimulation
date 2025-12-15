@@ -1,6 +1,6 @@
 """RL environments for DTN drone training"""
 
-from .single_agent_env import DTNDroneEnvironment
+from .rl_env import DroneAoIEnv 
 
 __all__ = [
     'DTNDroneEnvironment',

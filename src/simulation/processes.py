@@ -1,171 +1,82 @@
-# This file handles various simulation processes for the application.
-
-#TODO: Make processes handle discrete time steps for drone encounters
+# src/simulation/processes.py
 
 import simpy
-from typing import List
+import random
+from typing import List, Optional
 
 from ..agents.drone import Drone
 from ..agents.ship import Ship
 from ..agents.sensor import Sensor
 from ..config.simulation_config import SimulationConfig
 
+from analysis.metrics import MetricsCollector
 
-# Handels sensor processes
 
-def sensor_process(env: simpy.Environment, sensor: Sensor, config: SimulationConfig):
-    """Simpy process that generates sensor data at regular intervals."""
+def sensor_process(
+    env: simpy.Environment,
+    sensor: Sensor,
+    config: SimulationConfig,
+    metrics: Optional[MetricsCollector] = None
+):
+    """Simpy process that generates sensor data at intervals."""
     while True:
-
         message = sensor.generate_message(env.now, config)
-        sensor.add_message_to_buffer(message, config)
 
-        print(f"Sensor {sensor.id} generated message at time {env.now}")
+        # Buffer insert (may drop oldest; Sensor logs dropped via metrics)
+        sensor.add_message_to_buffer(message, config, metrics)
 
-        yield env.timeout(config.data_generation_interval)
+        # Log generation
+        if metrics is not None:
+            metrics.log_message_generated(1)
 
-# Handel drone processes
+        interval = random.expovariate(1.0 / sensor.generation_interval)
+        yield env.timeout(interval)
 
-def drone_process(env: simpy.Environment, drone: Drone, sensors: List[Sensor], ships: List[Ship], 
-                  other_drones: List[Drone], config: SimulationConfig):
-    """Simpy process that handles drone operations including movement and communication."""
 
+def drone_process(
+    env: simpy.Environment,
+    drone: Drone,
+    sensors: List[Sensor],
+    ships: List[Ship],
+    config: SimulationConfig,
+    metrics: Optional[MetricsCollector] = None
+):
+    """Event-driven drone process: move → act → wait."""
     while True:
-        # Get next target position
-        target = drone.get_next_target(sensors, ships, other_drones, config, env.now)
-        
+        target = drone.get_next_target(sensors, ships, config, env.now)
+
         travel_time = drone.calculate_travel_time(target.position, config)
-        print(f"[{env.now:.1f}s] {drone.id} starting movement to {target.position} (travel time: {travel_time:.1f}s)")
-        
-        time_elapsed = 0.0
+        yield env.timeout(travel_time)
 
-        # Discrete time movement with encounters
-        while time_elapsed < travel_time:
-            remaining_time = travel_time - time_elapsed
-            time_step = min(config.movement_time_step, remaining_time)
-
-            # Update drone position
-            target_reached = drone.update_position_towards_target(
-                target.position, time_step, config.drone_speed
-            )
-            
-            # Check for drone encounters during movement
-            nearby_drones = drone.get_drones_in_encounter_range(
-                other_drones, config.drone_comm_range
-            )
-
-            # Perform encounter communications
-            if nearby_drones:
-                encounters = drone.perform_encounter_communication(
-                    nearby_drones, config, env.now + time_elapsed
-                )
-                if encounters > 0:
-                    yield env.timeout(config.encounter_communication_time)
-        
-            # Wait for this time step
-            yield env.timeout(time_step)
-            time_elapsed += time_step
-            
-            # Break if we reached target early
-            if target_reached:
-                print(f"[{env.now:.1f}s] {drone.id} reached target early")
-                break
-
-        # Ensure final position is exact
         drone.position = target.position
-        print(f"[{env.now:.1f}s] {drone.id} arrived at {target.position}")
 
-        performed_communication = False  # Fix typo
-
-        # Check for sensors in range to communicate with
         if target.entity_type == "sensor" and target.entity is not None:
-            collected = drone.collect_from_sensor(target.entity, config, env.now)
-            if collected > 0:
-                performed_communication = True
+            collected = drone.collect_from_sensor(target.entity, config, env.now, metrics)
+            tot_msg = collected
+            
+            # Log sensor visit
+            if metrics is not None:
+                metrics.log_sensor_visit(target.entity.id)
+            
+            if hasattr(drone.movement_strategy, "notify_sensor_visit"):
+                drone.movement_strategy.notify_sensor_visit(target.entity.id, collected, env.now)
 
-        # Check for ships in range to communicate with
-        if target.entity_type == "ship" and target.entity is not None:
-            delivered = drone.deliver_to_ship(target.entity, config, env.now)
-            if delivered > 0:
-                performed_communication = True
+        elif target.entity_type == "ship" and target.entity is not None:
+            delivered_count, delivered_messages = drone.deliver_to_ship(target.entity, config, env.now)
+            tot_msg = delivered_count
+            
+            # Log ship visit
+            if metrics is not None:
+                metrics.log_ship_visit()
+            
+            if hasattr(drone.movement_strategy, "notify_ship_visit"):
+                drone.movement_strategy.notify_ship_visit(env.now, delivered_messages)
 
-        # Time spent on operation
-        operation_time = config.communication_wait_time if performed_communication else config.drone_wait_no_action_time
+        operation_time = config.communication_hand_shake_time + (tot_msg * config.communication_bitrate)
         yield env.timeout(operation_time)
-#Ship processes 
+
 
 def ship_process(env: simpy.Environment, ship: Ship, config: SimulationConfig):
-    """SimPy process for ship operations (currently stationary)"""
+    """SimPy process for ship operations (stationary)."""
     while True:
-        # Ships are stationary data collection points for now
-        # Later you could add patrol patterns or movement
-        yield env.timeout(60.0)  # Check every minute for potential operations
-            
-        # Optional: Print periodic status
-        if len(ship.received_messages) > 0:            
-            print(f"[{env.now:.1f}s] Ship {ship.id} has {len(ship.received_messages)} messages")
-
-#TODO: Maybe add battery processes later
-
-# Message TTL process
-
-def message_ttl_process(env: simpy.Environment, sensors: List[Sensor], drones: List[Drone], config: SimulationConfig):
-    """Process that periodically checks and removes expired messages based on TTL."""
-    while True:
-        yield env.timeout(config.message_ttl_check_interval)  # Check every 30 seconds
-
-        #Clean up drone buffers
-        for drone in drones:
-            initial_count = len(drone.messages)
-            drone.messages = [msg for msg in drone.messages if (env.now - msg.generation_time) <= msg.ttl]
-            removed_count = initial_count - len(drone.messages)
-            if removed_count > 0:
-                print(f"Drone {drone.id} removed {removed_count} expired messages at time {env.now}")
-
-        #Clean up sensor buffers
-        for sensor in sensors:
-            initial_count = len(sensor.messages)
-            sensor.messages = [msg for msg in sensor.messages if (env.now - msg.generation_time) <= msg.ttl]
-            removed_count = initial_count - len(sensor.messages)
-            if removed_count > 0:
-                print(f"Sensor {sensor.id} removed {removed_count} expired messages at time {env.now}")
-
-
-#Statistics process
-
-def statistics_process(env: simpy.Environment, sensors: List[Sensor], drones: List[Drone], ships: List[Ship], config: SimulationConfig):
-    """Process that periodically collects and prints simulation statistics."""
-    while True:
-        yield env.timeout(config.statistics_interval)  # Collect stats every defined interval
-
-        total_messages_generated = sum(sensor.data_sequence for sensor in sensors)
-        messages_in_sensor_buffers = sum(len(sensor.messages) for sensor in sensors)
-        messages_in_drone_buffers = sum(len(drone.messages) for drone in drones)
-        total_messages_delivered = sum(len(ship.received_messages) for ship in ships)
-
-        print(f"[{env.now:.1f}s] Statistics:")
-        print(f"  Total Messages Generated: {total_messages_generated}")
-        print(f"  Total Messages in sensor buffers: {messages_in_sensor_buffers}")
-        print(f"  Total Messages in drone buffers: {messages_in_drone_buffers}")
-        print(f"  Total Messages Delivered to Ships: {total_messages_delivered}")
-
-        # Calculate delivery ratio
-        if total_messages_generated > 0:
-            delivery_ratio = total_messages_delivered / total_messages_generated * 100
-            print(f"Delivery ratio: {delivery_ratio:.1f}%")
-        
-        # Per-drone status
-        print("\nDrone Status:")
-        for drone in drones:
-            buffer_usage = len(drone.messages) / config.drone_buffer_capacity * 100
-            print(f"  {drone.id}: {len(drone.messages)} messages ({buffer_usage:.1f}% buffer), "
-                  f"{drone.total_drone_encounters} encounters")  # ADD ENCOUNTER COUNT
-        
-        # Per-ship status  
-        print("\nShip Status:")
-        for ship in ships:
-            recent_messages = [msg for msg in ship.received_messages 
-                             if env.now - ship.delivery_log[msg.id] <= 300]  # Last 5 minutes
-            print(f"  {ship.id}: {len(ship.received_messages)} total, {len(recent_messages)} recent")
-        
-        print("=" * 50 + "\n")
+        yield env.timeout(60.0)
