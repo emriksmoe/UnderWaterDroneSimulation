@@ -12,6 +12,8 @@ env = DroneAoIEnv(config=config, episode_duration=86400, shaping_lambda=0.0, dit
 
 With lambda = 0.0 and dither = 0.0 only the AoI integral is beeing used as reward. An "starvation" penalty is added if you increase lambda, and the same goes for and dither penalty at each step.
 
+MaskablePPO is used to force drone to ship when buffer is full and to dissalaow doing same action twice in a row.
+
 To compare results run 
 python compare.py --all-rl-models --num-runs 100
 

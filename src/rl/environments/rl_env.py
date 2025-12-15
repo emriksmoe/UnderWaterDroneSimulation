@@ -222,14 +222,16 @@ class DroneAoIEnv(gym.Env):
     
     def action_masks(self) -> np.ndarray:
         mask = np.ones(self.num_sensors + 1, dtype=bool)
+
+        if self.drone.is_buffer_full(self.config):
+            mask[:self.num_sensors] = False  # Block all sensors
+            mask[self.num_sensors] = True
+            return mask    # Allow ship (last index)
+
         if self.last_action is not None:
             mask[self.last_action] = False
 
-            # FORCE SHIP: If buffer full, only allow ship action
-        if self.drone.is_buffer_full(self.config):
-            # Mask all sensor actions, only allow ship
-            mask[:len(self.sensors)] = False  # Block all sensors
-            mask[len(self.sensors)] = True    # Allow ship (last index)
+            # FORCE SHIP: If buffer full, only allow ship action'
         return mask
 
     def _compute_travel_time(self, target) -> float:

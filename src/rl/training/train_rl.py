@@ -210,7 +210,7 @@ if __name__ == "__main__":
         gamma=0.995,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.05,
+        ent_coef=0.01,
         verbose=1,
         tensorboard_log=tb_dir,
     )
