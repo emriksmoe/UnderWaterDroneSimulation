@@ -26,12 +26,17 @@ class DroneAoIEnv(gym.Env):
 
     metadata = {"render.modes": []}
 
-    def __init__(self, config, episode_duration: int = 86400, shaping_lambda: float = 0.0, dither: float = 0.0):
+    def __init__(self, config, episode_duration=86400, shaping_aplha=0.0, shaping_gamma=0.0, shaping_lambda=0.0, shaping_beta=0.0):
         super().__init__()
         self.config = config
         self.episode_duration = episode_duration
+
         self.shaping_lambda = shaping_lambda
-        self.dither = dither
+        self.shaping_beta = shaping_beta
+        self.shaping_aplha = shaping_aplha
+        self.shaping_gamma = shaping_gamma
+
+
         self.last_action = None
 
         self._build_sim()
@@ -141,6 +146,7 @@ class DroneAoIEnv(gym.Env):
         self.previous_time = 0.0
         self.total_delivered = 0
         self.last_action = None
+        self._last_delivered_msgs = []
 
         return self._get_obs(), {}
 
@@ -166,16 +172,19 @@ class DroneAoIEnv(gym.Env):
 
         cost = aoi_after - aoi_before
 
-        ESP = self.dither #Small decision cost to avoid dithering
+        #SP = self.dither #Small decision cost to avoid dithering
         # Normalize reward for PPO stability
-        reward_aoi = -(cost + ESP) / (len(self.sensor_ids) * 1000.0)
+        reward_aoi = -cost  / (len(self.sensor_ids) * 1000.0)
 
         #Additional reward shape
-        starve_max = self._max_time_since_any_sensor_visit(now)
+        #starve_max = self._max_time_since_any_sensor_visit(now)
 
-        reward_shape = -self.shaping_lambda * starve_max
+        #Starve avgrage reward shape
+        starve_avg = self._avg_time_since_sensor_visits(now)
+        delivery_reward = self._compute_delivery_bonus(self._last_delivered_msgs)
+        ship_visit = self._time_since_last_ship_visit(now)
 
-        reward = reward_aoi + reward_shape #if lambda = 0, no shaping
+        reward = self.shaping_aplha * reward_aoi + self.shaping_gamma * delivery_reward - self.shaping_lambda * starve_avg - self.shaping_beta * ship_visit 
 
         obs = self._get_obs()
         done = bool(now >= self.episode_duration)
@@ -240,6 +249,7 @@ class DroneAoIEnv(gym.Env):
 
     def _handle_arrival(self, target, target_type) -> int:
         now = float(self.env.now)
+        self._last_delivered_msgs = []
 
         if target_type == "sensor":
             count = self.drone.collect_from_sensor(target, self.config, now)
@@ -253,6 +263,7 @@ class DroneAoIEnv(gym.Env):
 
         elif target_type == "ship":
             delivered_count, delivered_msgs = self.drone.deliver_to_ship(target, self.config, now)
+            self._last_delivered_msgs = delivered_msgs
             tot_msg = delivered_count
             self.memory.last_ship_visit_time = now
             self.total_delivered += delivered_count
@@ -271,6 +282,7 @@ class DroneAoIEnv(gym.Env):
 
         return tot_msg
     
+    #We remove this
     def _max_time_since_any_sensor_visit(self, now: float) -> float:
         """Return the maximum time since last visit to any sensor."""
         if not self.sensor_ids:
@@ -286,3 +298,58 @@ class DroneAoIEnv(gym.Env):
             if t > worst:
                 worst = t
         return worst
+    
+    def _avg_time_since_sensor_visits(self, now: float) -> float:
+        """Return average time since visiting any sensor."""
+        if not self.sensor_ids:
+            return 0.0
+        
+        total = 0.0
+        denom = float(self.episode_duration)
+        
+        for sid in self.sensor_ids:
+            last = float(self.memory.last_sensor_visit_time.get(sid, 0.0))
+            t = (now - last) / denom
+            total += float(np.clip(t, 0.0, 1.0))
+        
+        return total / len(self.sensor_ids)  # Average normalized time
+    
+    def _compute_delivery_bonus(self, delivered_msgs) -> float:
+        """
+        Compute reward bonus based on AoI drops from fresh deliveries.
+        
+        For each delivered message from sensor i with generation time g:
+        - Old AoI before delivery: now - g_old (where g_old is previous gen time)
+        - New AoI after delivery: now - g (where g is new gen time)
+        - AoI drop: (now - g_old) - (now - g) = g - g_old
+        
+        Reward the sum of all AoI drops (normalized).
+        """
+        if not delivered_msgs:
+            return 0.0
+        
+        now = float(self.env.now)
+        total_aoi_drop = 0.0
+        
+        for msg in delivered_msgs:
+            sid = int(getattr(msg, "source_id", -1))
+            if sid < 0:
+                continue
+            
+            g_new = float(msg.generation_time)
+            g_old = float(self.memory.last_known_ship_gen_time.get(sid, 0.0))
+            
+            # Only reward if this is actually a fresher message
+            if g_new > g_old:
+                aoi_drop = g_new - g_old  # How much younger the data became
+                total_aoi_drop += aoi_drop
+        
+        # Normalize by episode duration for scale
+        normalized_bonus = total_aoi_drop / float(self.episode_duration)
+        return normalized_bonus
+    
+    def _time_since_last_ship_visit(self, now: float) -> float:
+        """Return normalized time since drone last visited the ship."""
+        last_ship_visit = float(self.memory.last_ship_visit_time)
+        t = (now - last_ship_visit) / float(self.episode_duration)
+        return float(np.clip(t, 0.0, 1.0))
