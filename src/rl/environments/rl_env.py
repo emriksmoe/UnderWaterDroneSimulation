@@ -26,15 +26,10 @@ class DroneAoIEnv(gym.Env):
 
     metadata = {"render.modes": []}
 
-    def __init__(self, config, episode_duration=86400, shaping_aplha=0.0, shaping_gamma=0.0, shaping_lambda=0.0, shaping_beta=0.0):
+    def __init__(self, config, episode_duration=86400):
         super().__init__()
         self.config = config
         self.episode_duration = episode_duration
-
-        self.shaping_lambda = shaping_lambda
-        self.shaping_beta = shaping_beta
-        self.shaping_aplha = shaping_aplha
-        self.shaping_gamma = shaping_gamma
 
 
         self.last_action = None
@@ -174,17 +169,16 @@ class DroneAoIEnv(gym.Env):
 
         #SP = self.dither #Small decision cost to avoid dithering
         # Normalize reward for PPO stability
-        reward_aoi = -cost  / (len(self.sensor_ids) * 1000.0)
+        reward = - (cost  / (len(self.sensor_ids) * 1000.0))
 
         #Additional reward shape
         #starve_max = self._max_time_since_any_sensor_visit(now)
 
         #Starve avgrage reward shape
-        starve_avg = self._avg_time_since_sensor_visits(now)
-        delivery_reward = self._compute_delivery_bonus(self._last_delivered_msgs)
-        ship_visit = self._time_since_last_ship_visit(now)
+        #starve_avg = self._avg_time_since_sensor_visits(now)
+        #delivery_reward = self._compute_delivery_bonus(self._last_delivered_msgs)
+        #ship_visit = self._time_since_last_ship_visit(now)
 
-        reward = self.shaping_aplha * reward_aoi + self.shaping_gamma * delivery_reward - self.shaping_lambda * starve_avg - self.shaping_beta * ship_visit 
 
         obs = self._get_obs()
         done = bool(now >= self.episode_duration)
@@ -282,7 +276,7 @@ class DroneAoIEnv(gym.Env):
 
         return tot_msg
     
-    #We remove this
+    #NOTE: WE DO NOT USE ANY OF THE REWARD SHAPING FUNCTIONS BELOW IN THE CURRENT IMPLEMENTATION, but they are kept for possible future use.
     def _max_time_since_any_sensor_visit(self, now: float) -> float:
         """Return the maximum time since last visit to any sensor."""
         if not self.sensor_ids:

@@ -20,12 +20,12 @@ class RandomMovementStrategy(MovementStrategy):
     def get_next_target(self, drone: 'Drone', sensors: List['Sensor'], ships: List['Ship'],
                         config: SimulationConfig, current_time: float) -> TargetResult:
         
-        if drone.is_buffer_full(config):
-            return TargetResult(
-                position=ships[0].position,
-                entity_type="ship",
-                entity=ships[0]
-            )
+        #if drone.is_buffer_full(config):
+            #return TargetResult(
+                #position=ships[0].position,
+                #entity_type="ship",
+               # entity=ships[0]
+            #)
 
         # Pure uniform random over all entities (sensors + ships)
         all_targets = []
