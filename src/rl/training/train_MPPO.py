@@ -21,7 +21,7 @@ def make_env():
     config = SimulationConfig()
     #set shaping lambda and dither here, set to 0 for pure AoI reward
     #lambda should be 10 and dither 1e-3 for reward shaping
-    env = DroneAoIEnv(config=config, episode_duration=86400)
+    env = DroneAoIEnv(config=config, episode_duration=86400, warmup_duration = 3600)
     # 24 hours SimPy time per episode
     return ActionMasker(env, lambda env: env.action_masks())
 

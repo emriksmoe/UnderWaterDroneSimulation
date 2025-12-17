@@ -158,13 +158,20 @@ class RLMovementStrategy(MovementStrategy):
         # Predict action
         if self.is_recurrent:
             # RecurrentPPO prediction with LSTM states
-            action, self.lstm_states = self.model.predict(
-                obs_batch,
-                state=self.lstm_states,
-                episode_start=self.episode_start,
-                deterministic=self.deterministic
-            )
-            self.episode_start = np.zeros((1,), dtype=bool)  # Not episode start anymore
+            try:
+                action, self.lstm_states = self.model.predict(
+                    obs_batch,
+                    state=self.lstm_states,
+                    episode_start=self.episode_start,
+                    deterministic=self.deterministic
+                )
+                self.episode_start = np.zeros((1,), dtype=bool)  # Not episode start anymore
+            except Exception as e:
+                print(f"ERROR in RecurrentPPO prediction: {e}")
+                import traceback
+                traceback.print_exc()
+                # Fallback to ship
+                action = len(sensors_ordered)
         else:
             # Check if model supports action masking (MaskablePPO)
             if hasattr(self.model, 'policy') and hasattr(self.model.policy, 'evaluate_actions'):
@@ -189,18 +196,45 @@ class RLMovementStrategy(MovementStrategy):
                 except TypeError:
                     # Model doesn't support action_masks parameter (DQN, A2C, PPO)
                     action, _ = self.model.predict(obs_batch, deterministic=self.deterministic)
+                except Exception as e:
+                    print(f"ERROR in MaskablePPO prediction: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Fallback to ship
+                    action = len(sensors_ordered)
             else:
                 # Standard prediction (DQN, A2C, PPO)
-                action, _ = self.model.predict(obs_batch, deterministic=self.deterministic)
+                try:
+                    action, _ = self.model.predict(obs_batch, deterministic=self.deterministic)
+                except Exception as e:
+                    print(f"ERROR in standard model prediction ({type(self.model).__name__}): {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Fallback to ship
+                    action = len(sensors_ordered)
+
+        # CRITICAL FIX: Enforce buffer constraints for ALL algorithms (moved outside masking block)
+        action = int(action)
+        
+        # Force ship visit if buffer is full
+        if drone.is_buffer_full(config):
+            action = len(sensors_ordered)  # Ship action
+        
+        # Force sensor visit if buffer is empty and trying to visit ship
+        #if len(drone.messages) == 0 and action == len(sensors_ordered):
+            # Pick a random sensor (avoid last action if possible)
+         #   valid_sensors = [i for i in range(len(sensors_ordered)) if i != self.memory.last_action]
+          #  if valid_sensors:
+           #     action = np.random.choice(valid_sensors)
+            #else:
+             #   action = 0  # Fallback to first sensor
 
         # Track for next decision
         self.memory.last_action = int(action)
 
-        a = int(action)
-
         # Map action to target
-        if a < len(sensors_ordered):
-            target_sensor = sensors_ordered[a]
+        if action < len(sensors_ordered):
+            target_sensor = sensors_ordered[action]
             return TargetResult(position=target_sensor.position, entity_type="sensor", entity=target_sensor)
 
         # "ship" action = last index

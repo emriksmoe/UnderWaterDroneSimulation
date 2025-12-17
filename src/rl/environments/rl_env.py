@@ -22,15 +22,31 @@ class DroneAoIEnv(gym.Env):
 
     One RL step = one movement decision (sensor or ship).
     Reward = negative continuous-time AoI integral accumulated during movement.
+    
+    Warm-up Period:
+    - Episodes can start with a warm-up period (warmup_duration) where reward = 0
+    - Agent can still move and interact, but no training signal until warm-up ends
+    - AoI tracking resets at end of warm-up to ignore transient behavior
+    
+    Action Masking:
+    - MaskablePPO uses action_masks() to enforce constraints (buffer management, no revisits)
+    - Other algorithms (DQN, A2C, RecurrentPPO) must learn constraints from reward signal alone
+
+
+    Constraint Enforcement:
+    - ALL algorithms have buffer constraints enforced in step()
+    - Must visit ship when buffer full
+    - Cannot visit ship when buffer empty
+    - This ensures fair comparison and prevents degenerate behavior
     """
 
     metadata = {"render.modes": []}
 
-    def __init__(self, config, episode_duration=86400):
+    def __init__(self, config, episode_duration=86400, warmup_duration=0):
         super().__init__()
         self.config = config
         self.episode_duration = episode_duration
-
+        self.warmup_duration = warmup_duration
 
         self.last_action = None
 
@@ -142,6 +158,7 @@ class DroneAoIEnv(gym.Env):
         self.total_delivered = 0
         self.last_action = None
         self._last_delivered_msgs = []
+        self.warmup_active = (self.warmup_duration > 0)
 
         return self._get_obs(), {}
 
@@ -149,6 +166,19 @@ class DroneAoIEnv(gym.Env):
         info = {}
         action = int(action)
 
+        # ENFORCE CONSTRAINT: Must visit ship when buffer is full
+        # This applies to ALL algorithms (not just MaskablePPO)
+        if self.drone.is_buffer_full(self.config):
+            action = self.num_sensors  # Force ship visit (last action index)
+
+        #elif action == self.num_sensors and len(self.drone.messages) == 0:
+            # Override with a valid sensor action (choose randomly from non-last-action sensors)
+         #   valid_sensors = [i for i in range(self.num_sensors) if i != self.last_action]
+          #  if valid_sensors:
+           #     action = np.random.choice(valid_sensors)
+            #else:
+                # Fallback: any sensor
+             #   action = np.random.choice(self.num_sensors)
 
         self.last_action = action
         self._current_target_idx = action
@@ -165,11 +195,25 @@ class DroneAoIEnv(gym.Env):
         self.ship.metrics.update_aoi_integral(now)
         aoi_after = self.ship.metrics.aoi_integral
 
+        if self.warmup_active and now >= self.warmup_duration:
+            self.warmup_active = False
+            # RESET AoI TRACKING at end of warm-up
+            self.ship.metrics.aoi_integral = 0.0
+            self.ship.metrics.last_aoi_update_time = now
+            aoi_before = 0.0
+            aoi_after = 0.0
+            info['warmup_ended'] = True
+
         cost = aoi_after - aoi_before
 
         #SP = self.dither #Small decision cost to avoid dithering
         # Normalize reward for PPO stability
-        reward = - (cost  / (len(self.sensor_ids) * 1000.0))
+        if self.warmup_active:
+            reward = 0.0  # No reward during warm-up
+            info['in_warmup'] = True
+        else:
+            # Normal reward calculation
+            reward = - (cost / (len(self.sensor_ids) * 1000.0))
 
         #Additional reward shape
         #starve_max = self._max_time_since_any_sensor_visit(now)
@@ -190,7 +234,8 @@ class DroneAoIEnv(gym.Env):
             episode_metrics = self.ship.metrics.finalize(float(self.env.now))
             
             # time-average AoI (seconds)
-            time_avg_aoi = episode_metrics.aoi_integral / (self.episode_duration * len(self.sensor_ids))
+            actual_duration = self.episode_duration - self.warmup_duration
+            time_avg_aoi = episode_metrics.aoi_integral / (actual_duration * len(self.sensor_ids))
             
             info.update({
                 "aoi_integral": episode_metrics.aoi_integral,
@@ -224,17 +269,27 @@ class DroneAoIEnv(gym.Env):
         )
     
     def action_masks(self) -> np.ndarray:
+        """
+        Action masks for MaskablePPO.
+        Note: step() enforces buffer constraint for ALL algorithms,
+        so masks are mainly for preventing immediate revisits.
+        """
         mask = np.ones(self.num_sensors + 1, dtype=bool)
 
+        # Rule 1: Buffer full -> MUST visit ship
         if self.drone.is_buffer_full(self.config):
             mask[:self.num_sensors] = False  # Block all sensors
-            mask[self.num_sensors] = True
-            return mask    # Allow ship (last index)
-
+            mask[self.num_sensors] = True    # Allow only ship
+            return mask
+        
+        # Rule 2: Buffer empty -> CANNOT visit ship
+        if len(self.drone.messages) == 0:
+            mask[self.num_sensors] = False  # Block ship (nothing to deliver)
+        
+        # Rule 3: Prevent immediate revisit to same location
         if self.last_action is not None:
             mask[self.last_action] = False
 
-            # FORCE SHIP: If buffer full, only allow ship action'
         return mask
 
     def _compute_travel_time(self, target) -> float:

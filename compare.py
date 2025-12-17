@@ -10,6 +10,8 @@ from datetime import datetime
 import os
 import argparse
 from pathlib import Path
+import matplotlib.pyplot as plt
+import matplotlib
 
 from src.simulation.agent_factory import AgentFactory
 from src.simulation.processes import (
@@ -69,6 +71,13 @@ def run_simulation(config, movement_strategy, duration=86400, seed=None) -> Dict
         if ship.metrics.messages else float("inf")
     )
 
+    # Calculate sensor coverage: fraction of sensors with at least one delivery
+    sensors_with_delivery = set()
+    for msg in ship.metrics.messages:
+        sensors_with_delivery.add(msg.source_sensor)
+    
+    sensor_coverage = len(sensors_with_delivery) / len(sensors)
+
     return {
         "seed": seed,
         "aoi_integral": metrics.aoi_integral,
@@ -83,19 +92,31 @@ def run_simulation(config, movement_strategy, duration=86400, seed=None) -> Dict
         "ship_visits": metrics.ship_visits,
         "sensor_visits_total": metrics.sensor_visits_total,
         "sensor_visits_per_sensor": metrics.sensor_visits_per_sensor,
+        "sensor_coverage": sensor_coverage,
     }
 
 
-def run_multiple_seeds(config, movement_strategy, num_runs, duration, base_seed) -> List[Dict]:
+def run_multiple_seeds(config, movement_strategy_factory, num_runs, duration, base_seed) -> List[Dict]:
+    """
+    Run multiple simulations with different seeds.
+    
+    Args:
+        movement_strategy_factory: Either a strategy instance (for non-RL) or a callable that creates new instances (for RL)
+    """
     results = []
     for i in range(num_runs):
         seed = base_seed + i
         
-        # Reset strategy state before each run
-        if hasattr(movement_strategy, 'reset'):
-            movement_strategy.reset()
+        # For RL strategies, create a fresh instance for each run to avoid state leakage
+        # For others, reset and reuse
+        if callable(movement_strategy_factory):
+            strategy = movement_strategy_factory()
+        else:
+            strategy = movement_strategy_factory
+            if hasattr(strategy, 'reset'):
+                strategy.reset()
         
-        results.append(run_simulation(config, movement_strategy, duration, seed))
+        results.append(run_simulation(config, strategy, duration, seed))
     return results
 
 
@@ -117,6 +138,7 @@ def summarize(results: List[Dict]) -> Dict:
         "dropped_drone_buffer",
         "ship_visits",
         "sensor_visits_total",
+        "sensor_coverage",
     ]:
         m, s = mean_std([r[key] for r in results])
         out[key] = {"mean": m, "std": s}
@@ -152,6 +174,123 @@ def print_summary(name: str, stats: Dict):
         print("\n  Per-sensor visits:")
         for sensor_id, sensor_stats in sorted(stats["sensor_visits_per_sensor"].items()):
             print(f"    Sensor {sensor_id:2d}:  {sensor_stats['mean']:6.2f} ± {sensor_stats['std']:5.2f}")
+
+
+def plot_comparison(all_results: Dict, strategies: Dict, output_dir: str, timestamp: str):
+    """
+    Create bar plots comparing key metrics across strategies.
+    """
+    # Set up matplotlib with academic paper style
+    plt.rcParams.update({
+        # ---- Font (Times family) ----
+        "font.family": "serif",
+        "font.serif": ["Times New Roman", "Times", "TeX Gyre Termes"],
+
+        # ---- Font sizes ----
+        "font.size": 9,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "legend.fontsize": 8,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+
+        # ---- Axis style ----
+        "axes.linewidth": 0.8,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+
+        # ---- Save settings ----
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.02,
+    })
+    
+    # Extract strategy names and data
+    strategy_keys = list(strategies.keys())
+    strategy_names = [strategies[key][1] for key in strategy_keys]
+    
+    # Metrics to plot (now 5 metrics in 2x3 grid, with one empty subplot)
+    metrics = [
+        ("aoi_integral", "AoI Integral", "Total AoI (s²)"),
+        ("time_avg_aoi", "Time-Averaged AoI", "Average AoI (s)"),
+        ("mean_delivered_message_age", "Mean Delivered Message Age", "Age (s)"),
+        ("delivery_rate", "Delivery Rate", "Rate"),
+        ("sensor_coverage", "Sensor Coverage", "Fraction")
+    ]
+    
+    # First pass: collect all data to determine consistent y-limits
+    metric_data = {}
+    for metric_key, title, ylabel in metrics:
+        means = []
+        stds = []
+        for key in strategy_keys:
+            stats = all_results[key]["stats"]
+            means.append(stats[metric_key]["mean"])
+            stds.append(stats[metric_key]["std"])
+        
+        # Calculate y-limit: max value + error bar + 10% padding
+        max_val = max([m + s for m, s in zip(means, stds)])
+        y_limit = max_val * 1.15  # 15% padding for labels
+        
+        metric_data[metric_key] = {
+            'means': means,
+            'stds': stds,
+            'y_limit': y_limit
+        }
+    
+    # Create figure with subplots (2x3 grid, one will be empty)
+    fig, axes = plt.subplots(2, 3, figsize=(10.2, 4.8))  # 3 columns x 3.4 width
+    axes = axes.flatten()
+    
+    # Use distinct colors for better visibility
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    
+    for idx, (metric_key, title, ylabel) in enumerate(metrics):
+        ax = axes[idx]
+        
+        means = metric_data[metric_key]['means']
+        stds = metric_data[metric_key]['stds']
+        y_limit = metric_data[metric_key]['y_limit']
+        
+        x = np.arange(len(strategy_names))
+        bars = ax.bar(x, means, yerr=stds, capsize=3, 
+                     color=colors[:len(strategy_names)], 
+                     alpha=0.8, edgecolor='black', linewidth=0.8)
+        
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.set_xticks(x)
+        ax.set_xticklabels(strategy_names, rotation=45, ha='right')
+        
+        # Set consistent y-axis limits
+        ax.set_ylim(0, y_limit)
+        
+        # Add value labels on bars
+        for bar, mean, std in zip(bars, means, stds):
+            height = bar.get_height()
+            if metric_key == "aoi_integral":
+                label = f'{mean:.2e}'
+            elif metric_key in ["delivery_rate", "sensor_coverage"]:
+                label = f'{mean:.3f}'
+            else:
+                label = f'{mean:.1f}'
+            
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   label, ha='center', va='bottom', fontsize=7)
+    
+    # Hide the last (6th) subplot since we only have 5 metrics
+    axes[5].axis('off')
+    
+    fig.tight_layout()
+    
+    # Save as PDF
+    pdf_path = os.path.join(output_dir, f"comparison_{timestamp}.pdf")
+    fig.savefig(pdf_path, dpi=300, bbox_inches='tight', pad_inches=0.02)
+    print(f"\nPlot saved: {pdf_path}")
+    
+    # Display the plot
+    plt.show()
 
 
 def discover_rl_models(models_dir="./models"):
@@ -198,6 +337,8 @@ if __name__ == "__main__":
                         help="Include all discovered RL models in models/ directory")
     parser.add_argument("--models-dir", type=str, default="./models",
                         help="Directory containing RL models (default: ./models)")
+    parser.add_argument("--no-plot", action="store_true",
+                        help="Skip generating plots")
     
     args = parser.parse_args()
 
@@ -227,12 +368,20 @@ if __name__ == "__main__":
             
             for model_path, model_name in discovered_models:
                 try:
-                    rl_strategy = RLMovementStrategy(
-                        model_path=model_path,
-                        episode_duration=args.rl_episode_duration
-                    )
+                    # Create a factory function that creates fresh RLMovementStrategy instances
+                    # This prevents state leakage between runs
+                    def make_rl_strategy(path=model_path, duration=args.rl_episode_duration):
+                        return RLMovementStrategy(
+                            model_path=path,
+                            episode_duration=duration
+                        )
+                    
+                    # Test that it loads successfully
+                    test_strategy = make_rl_strategy()
+                    print(f"✓ Loaded {model_name}: {type(test_strategy.model).__name__}")
+                    
                     # Use model_name as key (e.g., "run_20251214_143245")
-                    strategies[f"rl_{model_name}"] = (rl_strategy, f"RL: {model_name}")
+                    strategies[f"rl_{model_name}"] = (make_rl_strategy, f"RL: {model_name}")
                     rl_models_added.append(model_name)
                 except Exception as e:
                     print(f"Failed to load {model_name}: {e}")
@@ -242,17 +391,24 @@ if __name__ == "__main__":
     elif args.rl_model:
         # Load specific model
         try:
-            rl_strategy = RLMovementStrategy(
-                model_path=args.rl_model,
-                episode_duration=args.rl_episode_duration
-            )
+            # Create a factory function
+            def make_rl_strategy(path=args.rl_model, duration=args.rl_episode_duration):
+                return RLMovementStrategy(
+                    model_path=path,
+                    episode_duration=duration
+                )
+            
+            # Test that it loads successfully
+            test_strategy = make_rl_strategy()
+            
             # Extract name from path
             model_name = Path(args.rl_model).stem  # e.g., "best_model"
             parent_name = Path(args.rl_model).parent.name  # e.g., "run_20251214_143245"
             full_name = f"{parent_name}_{model_name}" if parent_name != "." else model_name
             
-            strategies["rl"] = (rl_strategy, f"RL: {full_name}")
+            strategies["rl"] = (make_rl_strategy, f"RL: {full_name}")
             print(f"Loaded RL model: {args.rl_model}")
+            print(f"   Model type: {type(test_strategy.model).__name__}")
             print(f"   Episode duration: {args.rl_episode_duration}s ({args.rl_episode_duration/3600:.1f}h)\n")
             rl_models_added.append(full_name)
         except Exception as e:
@@ -292,3 +448,7 @@ if __name__ == "__main__":
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nSaved: {path}")
+    
+    # GENERATE PLOTS
+    if not args.no_plot:
+        plot_comparison(all_results, strategies, args.outdir, timestamp)

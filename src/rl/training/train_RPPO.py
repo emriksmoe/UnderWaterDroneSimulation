@@ -20,7 +20,8 @@ def make_env():
     config = SimulationConfig()
     env = DroneAoIEnv(
         config=config, 
-        episode_duration=86400
+        episode_duration=86400,
+        warmup_duration=3600  # 1 hour warmup to stabilize LSTM and ignore transient startup
     )
     return env
 
@@ -98,9 +99,10 @@ class AoIEvalCallback(BaseCallback):
                     episode_start=episode_start,
                     deterministic=self.deterministic
                 )
-                obs, reward, done, info = self.eval_env.step(action)
+                # After first step, we're no longer at episode start
+                episode_start = np.zeros((1,), dtype=bool)
                 
-                episode_start = done  # Mark if episode ended
+                obs, reward, done, info = self.eval_env.step(action)
 
                 total_r += float(reward[0])
                 steps += 1
@@ -177,13 +179,15 @@ if __name__ == "__main__":
     model = RecurrentPPO(
         policy="MlpLstmPolicy",  # LSTM policy
         env=train_env,
-        n_steps=2048,            # Shorter rollouts for LSTM
-        batch_size=64,           # Smaller batch for LSTM
-        learning_rate=3e-4,
+        n_steps=4096,            # Longer rollouts for better LSTM context
+        batch_size=128,          # Larger batch for stability
+        learning_rate=1e-4,      # Lower LR for LSTM stability
         gamma=0.995,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.01,
+        ent_coef=0.05,           # Higher entropy to prevent collapse
+        vf_coef=0.5,             # Value function coefficient
+        max_grad_norm=0.5,       # Gradient clipping for LSTM stability
         verbose=1,
         tensorboard_log=tb_dir,
     )
@@ -204,7 +208,7 @@ if __name__ == "__main__":
     )
 
     model.learn(
-        total_timesteps=5_000_000,
+        total_timesteps=5_000_000,  # Best model callback saves peak performance, so no risk in longer training
         callback=[eval_callback, checkpoint_callback],
         progress_bar=True,
     )

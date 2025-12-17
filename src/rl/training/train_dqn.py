@@ -20,13 +20,14 @@ def make_env():
     config = SimulationConfig()
     env = DroneAoIEnv(
         config=config, 
-        episode_duration=86400     # No ship visit penalty
+        episode_duration=86400,
+        warmup_duration=3600
     )
     return env
 
 
 # -------------------------
-# Custom evaluation callback
+# Custom evaluation callback for DQN
 # -------------------------
 class AoIEvalCallback(BaseCallback):
     def __init__(
@@ -35,7 +36,6 @@ class AoIEvalCallback(BaseCallback):
         eval_freq: int,
         n_eval_episodes: int,
         best_model_save_path: str,
-        deterministic: bool = True,
         verbose: int = 1,
     ):
         super().__init__(verbose=verbose)
@@ -43,7 +43,6 @@ class AoIEvalCallback(BaseCallback):
         self.eval_freq = int(eval_freq)
         self.n_eval_episodes = int(n_eval_episodes)
         self.best_model_save_path = best_model_save_path
-        self.deterministic = deterministic
         self.best_mean_reward = -np.inf
         os.makedirs(self.best_model_save_path, exist_ok=True)
 
@@ -61,6 +60,7 @@ class AoIEvalCallback(BaseCallback):
 
             self.logger.record("eval/mean_reward", float(mean_reward))
             self.logger.record("eval/mean_ep_length", float(mean_len))
+            self.logger.record("eval/exploration_rate", float(self.model.exploration_rate))
 
             if len(infos) > 0:
                 self._log_info_metrics(infos)
@@ -75,6 +75,16 @@ class AoIEvalCallback(BaseCallback):
         return True
 
     def _run_evaluation(self):
+        """
+        Run evaluation with greedy policy (no exploration).
+        For DQN, we temporarily set exploration_rate to 0.
+        """
+        # Save current exploration rate
+        original_eps = self.model.exploration_rate
+        
+        # Disable exploration for evaluation (pure greedy)
+        self.model.exploration_rate = 0.0
+        
         ep_rewards: List[float] = []
         ep_lengths: List[int] = []
         ep_infos: List[Dict[str, Any]] = []
@@ -86,7 +96,8 @@ class AoIEvalCallback(BaseCallback):
             steps = 0
 
             while not done[0]:
-                action, _ = self.model.predict(obs, deterministic=self.deterministic)
+                # DQN predict: with exploration_rate=0, uses argmax Q-values
+                action, _ = self.model.predict(obs, deterministic=True)
                 obs, reward, done, info = self.eval_env.step(action)
 
                 total_r += float(reward[0])
@@ -99,6 +110,9 @@ class AoIEvalCallback(BaseCallback):
 
             ep_rewards.append(total_r)
             ep_lengths.append(steps)
+
+        # Restore original exploration rate
+        self.model.exploration_rate = original_eps
 
         mean_reward = float(np.mean(ep_rewards)) if ep_rewards else 0.0
         mean_len = float(np.mean(ep_lengths)) if ep_lengths else 0.0
@@ -184,7 +198,6 @@ if __name__ == "__main__":
         eval_freq=50_000,
         n_eval_episodes=3,
         best_model_save_path=best_dir,
-        deterministic=True,
         verbose=1,
     )
 

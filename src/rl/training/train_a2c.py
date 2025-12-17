@@ -20,7 +20,8 @@ def make_env():
     config = SimulationConfig()
     env = DroneAoIEnv(
         config=config, 
-        episode_duration=86400
+        episode_duration=86400,
+        warmup_duration=3600
     )
     return env
 
